@@ -162,20 +162,17 @@ class OlsLoader(object):
             return nb_terms
 
     def _get_ontology_namespaced(self, m_ontology, namespace):
-        t_ontology, created = self.get_or_create(Ontology, name=m_ontology.name,
-                                                 namespace=namespace,
-                                                 create_method_kwargs=dict(
-                                                     version=m_ontology.version,
-                                                     title=m_ontology.title))
+        t_ontology, created = self.get_or_create(Ontology, name=m_ontology.name, namespace=namespace,
+                                                 create_method_kwargs=dict(version=m_ontology.version,
+                                                                           title=m_ontology.title))
         return t_ontology
 
     def load_term_subsets(self, term: Term):
         with self.session_scope():
             subsets = 0
             for subset_name in term.subsets.split(','):
-                search = self.client.search(query=subset_name,
-                                            filters={'ontology': term.ontology.name,
-                                                     'type': 'property'})
+                search = self.client.search(query=subset_name, filters={'ontology': term.ontology.name,
+                                                                        'type': 'property'})
                 if len(search) == 1:
                     details = self.client.detail(search[0])
                     subset, created = self.get_or_create(Subset, name=subset_name,
@@ -194,10 +191,9 @@ class OlsLoader(object):
     def _term_object(self, o_term: helpers.Term):
         m_ontology = self.load_ontology(o_term.ontology_name)
         m_term, created = self.get_or_create(Term, accession=o_term.accession,
-                                             create_method_kwargs=dict(
-                                                 ontology=m_ontology,
-                                                 helper=o_term
-                                             ))
+                                             create_method_kwargs=dict(ontology=m_ontology,
+                                                                       helper=o_term
+                                                                       ))
         return m_term
 
     def load_term(self, iri, ontology_name=None):
@@ -256,6 +252,3 @@ class OlsLoader(object):
                 print(m_syno)
                 print(o_term.obo_synonym)
             pass
-
-    def drop_schema(self):
-        pass
