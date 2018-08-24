@@ -9,11 +9,12 @@ import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.loader import OlsLoader
 from ebi.ols.api.client import OlsClient
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(name)s %(levelname)s %(message)s',
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
                     datefmt='%m-%d %H:%M')
 
 logger = logging.getLogger(__name__)
+
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
 
 
@@ -28,14 +29,14 @@ def ignore_warnings(test_func):
 
 class TestLoading(unittest.TestCase):
     _multiprocess_shared_ = True
-    db_url = 'sqlite:////' + dirname(__file__) + '/test_ontology.db'
+    db_url = 'sqlite:////' + dirname(__file__) + '/test_ontology.sqlite'
 
     @classmethod
     def setUp(cls):
         from os import remove
         try:
-            remove(dirname(__file__) + '/test_ontology.db')
-            logger.info('Remove old DB %s', dirname(__file__) + '/test_ontology.db')
+            remove(dirname(__file__) + '/test_ontology.sqlite')
+            logger.info('Remove old DB %s', dirname(__file__) + '/test_ontology.sqlite')
         except OSError as e:
             logger.info('---- Unable to delete old db ----')
             pass
@@ -46,12 +47,12 @@ class TestLoading(unittest.TestCase):
     def testLoadOntology(self):
         loader = OlsLoader(self.db_url)
         # print(m_ontology)
-        m_ontology = loader.load_ontology('efo')
-        logger.info('Loaded ontology %s', m_ontology)
 
         with loader.session_scope() as session:
             # test retrieve
             # test try to create duplicated
+            m_ontology = loader.load_ontology('efo')
+            logger.info('Loaded ontology %s', m_ontology)
 
             r_ontology = session.query(models.Ontology).filter_by(name=m_ontology.name,
                                                                   namespace=m_ontology.namespace).one()
@@ -69,11 +70,11 @@ class TestLoading(unittest.TestCase):
     def testLoadOntologyTerms(self):
         loader = OlsLoader(self.db_url)
 
-        expected = loader.load_ontology_terms('geno')
-        logger.info('Expected terms %s', expected)
-
         with loader.session_scope() as session:
-            s_terms = session.query(models.Term).filter(models.Ontology.name == 'geno')
+            expected = loader.load_ontology_terms('fypo')
+            logger.info('Expected terms %s', expected)
+
+            s_terms = session.query(models.Term).filter(models.Ontology.name == 'fypo')
             inserted = s_terms.all()
             logger.info('Inserted terms %s', len(inserted))
             if logger.isEnabledFor(logging.DEBUG):

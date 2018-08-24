@@ -5,9 +5,14 @@ python:
 # command to install dependencies
 install:
   - pip install -r requirements.txt
+  - pip install nose
+  - pip install coverage
+  - pip install python-coveralls
 # command to run tests
 script:
-  - nosetests
+  - nosetests --verbose --with-coverage --cover-package=bio.ensembl
+after_success:
+  - coveralls
 notifications:
   email:
     on_success: change

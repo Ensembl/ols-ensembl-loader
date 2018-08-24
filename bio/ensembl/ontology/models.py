@@ -33,11 +33,11 @@ class LoadAble(object):
         # print('in it 1', helper, isinstance(helper, helpers.OLSHelper))
         if helper and isinstance(helper, helpers.OLSHelper):
             constructor_args = {key: getattr(helper, self._load_map.get(key, key), None) for key in dir(self)}
-            logger.debug('helper %s args: %s', helper.__class__, constructor_args)
-            constructor_args.update(**kwargs)
+            # logger.debug('helper %s args: %s', helper.__class__, constructor_args)
+            # constructor_args.update(**kwargs)
             super().__init__(**constructor_args)
         else:
-            logger.debug('std %s args: %s', self.__class__, kwargs)
+            logger.debug('No Helper %s args: %s', self.__class__, kwargs)
             super().__init__(**kwargs)
 
     def __repr__(self):
