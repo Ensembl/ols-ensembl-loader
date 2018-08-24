@@ -73,8 +73,8 @@ class OlsLoader(object):
             return obj, False
         except NoResultFound:
             try:
-                logger.debug('Not existing %s entity for params %s', model, kwargs)
                 kwargs.update(create_method_kwargs or {})
+                logger.debug('Not existing %s entity for params %s', model, kwargs)
                 created = getattr(model, create_method, model)(**kwargs)
                 self._session.add(created)
                 self._session.flush()
@@ -83,7 +83,7 @@ class OlsLoader(object):
                 return created, True
             except IntegrityError:
                 logger.info('Integrity error upon flush')
-                # self._session.rollback()
+                self._session.rollback()
                 if create_method_kwargs is not None:
                     [kwargs.pop(key) for key in create_method_kwargs.keys()]
                 logger.debug('%s', kwargs)
@@ -162,7 +162,7 @@ class OlsLoader(object):
                 logger.debug('Loaded term %s', o_term)
                 if o_term.obo_name_space not in terms_onto.keys():
                     print('search again ')
-                    terms_onto[o_term.obo_name_space] = self._get_ontology_namespaced(m_ontology,
+                    terms_onto[o_term.obo_name_space] = self._get_ontology_namespaced(m_ontology.name,
                                                                                       o_term.obo_name_space,
                                                                                       version=m_ontology.version,
                                                                                       title=m_ontology.title)
@@ -171,10 +171,11 @@ class OlsLoader(object):
                 m_term.ontology = terms_onto[o_term.obo_name_space]
                 self._session.add(m_term)
                 # self._session.flush()
-                #self.load_term_subsets(m_term)
+                self.load_term_subsets(m_term)
                 #for relation in o_term.relations_types:
                 #    self.load_term_relation(o_term.iri, o_term.ontology_name, relation)
                 #self.load_term_synonyms(o_term.iri, o_term.ontology_name)
+                self._session.flush()
                 nb_terms += 1
         return nb_terms
 
