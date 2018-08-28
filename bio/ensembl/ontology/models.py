@@ -34,7 +34,8 @@ class LoadAble(object):
         if helper and isinstance(helper, helpers.OLSHelper):
             constructor_args = {key: getattr(helper, self._load_map.get(key, key), None) for key in dir(self)}
             # logger.debug('helper %s args: %s', helper.__class__, constructor_args)
-            # constructor_args.update(**kwargs)
+            constructor_args.update(**kwargs)
+            logger.debug('__init__ params %s ', constructor_args)
             super().__init__(**constructor_args)
         else:
             logger.debug('No Helper %s args: %s', self.__class__, kwargs)
@@ -54,8 +55,8 @@ class Meta(Base):
     )
 
     meta_id = Column(Integer, primary_key=True)
-    meta_key = Column(String, nullable=False)
-    meta_value = Column(String)
+    meta_key = Column(String(64), nullable=False, )
+    meta_value = Column(String(128))
     species_id = Column(Integer)
 
     def __repr__(self):
@@ -76,10 +77,10 @@ class Ontology(LoadAble, Base):
         return ['id', 'name', 'namespace', 'version', 'title']
 
     id = Column('ontology_id', Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    _namespace = Column('namespace', String, nullable=False)
-    _version = Column('data_version', String, nullable=True)
-    title = Column(String, nullable=True)
+    name = Column(String(64), nullable=False)
+    _namespace = Column('namespace', String(64), nullable=False)
+    _version = Column('data_version', String(64), nullable=True)
+    title = Column(String(255), nullable=True)
 
     terms = relationship('Term')
 
@@ -113,7 +114,7 @@ class RelationType(Base):
     __tablename__ = 'relation_type'
 
     relation_type_id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False, unique=True)
+    name = Column(String(64), nullable=False, unique=True)
 
     def __repr__(self):
         return '<RelationType(relation_type_id={}, name={})>'.format(
@@ -131,8 +132,8 @@ class Subset(LoadAble, Base):
         return ['subset_id', 'name', 'definition']
 
     subset_id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False, unique=True)
-    definition = Column(String, nullable=False, server_default=text("''"))
+    name = Column(String(64), nullable=False, unique=True)
+    definition = Column(String(128), nullable=False, server_default=text("''"))
 
 
 class Term(LoadAble, Base):
@@ -143,17 +144,17 @@ class Term(LoadAble, Base):
 
     def __dir__(self):
         return ['term_id', 'name', 'ontology_id', 'subsets', 'accession', 'description', 'is_root', 'is_obsolete',
-                'iri']
+                'iri', 'ontology']
 
     term_id = Column(Integer, primary_key=True)
     ontology_id = Column(ForeignKey('ontology.ontology_id'), nullable=False)
-    subsets = Column(Text)
-    accession = Column(String, nullable=False, unique=True)
-    name = Column(String, nullable=False, index=True)
-    description = Column('definition', Text)
+    subsets = Column(Text(65535))
+    accession = Column(String(64), nullable=False, unique=True)
+    name = Column(String(255), nullable=False, index=True)
+    description = Column('definition', Text(65535))
     is_root = Column(Boolean, nullable=False)
     is_obsolete = Column(Boolean, nullable=False)
-    iri = Column(Text)
+    iri = Column(Text(65535))
 
     ontology = relationship('Ontology')
     alt_accession = relationship("AltId", back_populates="term")
@@ -170,7 +171,7 @@ class AltId(LoadAble, Base):
 
     alt_id = Column(Integer, primary_key=True)
     term_id = Column(ForeignKey('term.term_id'), nullable=False)
-    accession = Column(String, nullable=False, index=True)
+    accession = Column(String(64), nullable=False, index=True)
 
     term = relationship('Term', back_populates='alt_accession')
 
@@ -229,11 +230,12 @@ class Synonym(LoadAble, Base):
     __tablename__ = 'synonym'
     __table_args__ = (
         Index('term_synonym_idx', 'term_id', 'synonym_id', unique=True),
+        Index('term_name_idx', 'name', mysql_length=2048),
     )
 
     synonym_id = Column(Integer, primary_key=True)
     term_id = Column(ForeignKey('term.term_id'), nullable=False)
-    name = Column(TEXT, nullable=False, index=True)
+    name = Column(Text(65535), nullable=False)
     type = Column(Enum(SynonymTypeEnum))
     db_xref = Column('dbxref', VARCHAR(255), nullable=True)
 

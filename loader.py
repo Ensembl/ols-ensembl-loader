@@ -39,4 +39,4 @@ if __name__ == "__main__":
     loader = OlsLoader(db_url, **options)
     loader.create_schema()
     loader.wipe_ontology(ontology_name=arguments.ontology)
-    loader.load_all(arguments.ontology)
+    loader.load_ontology(arguments.ontology)
