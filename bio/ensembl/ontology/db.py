@@ -1,33 +1,63 @@
 # -*- coding: utf-8 -*-
 import contextlib
+import logging
 from os import getenv
 
+import sqlalchemy
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
+
+from ensembl.ontology.models import Base
 
 autocommit = getenv('autocommit', False)
 autoflush = getenv('autoflush', False)
-Session = sessionmaker(autocommit=autocommit, autoflush=autoflush)
 
-Base = declarative_base()
+logger = logging.getLogger(__name__)
+
+Session = sessionmaker(autocommit=True, autoflush=True)
 
 
-@contextlib.contextmanager
-def session_scope():
-    """Provide a transactional scope around a series of operations."""
-    session = Session()
-    # print('Session binded to', session.bind)
-    try:
-        yield session
-        # print(session.new)
-        session.commit()
-    except:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+class DataAccessLayer:
+    connection = None
+    engine = None
+    conn_string = None
+    metadata = Base.metadata
+    session = None
+
+    def db_init(self, conn_string, **options):
+        # TODO add autocommit / autoflush in options
+        print('in init', conn_string)
+        self.engine = sqlalchemy.create_engine(conn_string or self.conn_string,
+                                               pool_recycle=options.get('timeout', 36000),
+                                               echo=options.get('echo', False))
+        self.session = Session(bind=self.engine)
+        self.session.close()
+        print(self.session_scope())
+        self.metadata.create_all(self.engine)
+        # self.session.close()
+        # self.connection = engine.connect()
+        # self.connection.close()
+
+    @contextlib.contextmanager
+    def session_scope(self):
+        """Provide a transactional scope around a series of operations."""
+        session = Session(bind=self.engine)
+        logger.debug('Open session')
+        try:
+            yield session
+            logger.debug('Commit session')
+            session.commit()
+        except Exception as e:
+            logger.exception('Error in session %s', e)
+            session.rollback()
+            raise
+        finally:
+            logger.debug('Closing session')
+            session.close()
+
+
+dal = DataAccessLayer()
 
 
 def get_one_or_create(model, session,
@@ -54,12 +84,3 @@ def get_one_or_create(model, session,
                 [kwargs.pop(key) for key in create_method_kwargs.keys()]
             # print('search', kwargs)
             return session.query(model).filter_by(**kwargs).one(), False
-
-
-def exists(model, **kwargs):
-    with session_scope() as session:
-        try:
-            obj = session.query(model).filter_by(**kwargs).one(), False
-            return obj
-        except NoResultFound:
-            return False

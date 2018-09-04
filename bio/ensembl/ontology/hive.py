@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 # @author Marc Chakiachvili
-
-
 import eHive
-
 
 
 class OLSRunnable(eHive.BaseRunnable):

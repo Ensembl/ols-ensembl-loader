@@ -26,6 +26,7 @@ if __name__ == "__main__":
 
     arguments = parser.parse_args(sys.argv[1:])
     logger.setLevel(logging.ERROR if arguments.verbose is False else logging.DEBUG)
+    logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO if arguments.verbose is False else logging.WARNING)
     logger.debug('Script arguments %s', arguments)
     args = vars(parser.parse_args())
     db_name = 'ensembl_ontology_{}'.format(arguments.release)
@@ -37,6 +38,11 @@ if __name__ == "__main__":
     options = {'drop': not arguments.keep, 'echo': arguments.verbose}
     logger.debug('Loader arguments %s %s ', db_url, options)
     loader = OlsLoader(db_url, **options)
-    loader.create_schema()
-    loader.wipe_ontology(ontology_name=arguments.ontology)
+    if not arguments.keep:
+        logger.info('Wiping old ontology %s', arguments.ontology)
+        loader.create_schema()
+        loader.wipe_ontology(ontology_name=arguments.ontology)
+        logger.info('...Done')
+    logger.info('Loading ontology %s', arguments.ontology)
     loader.load_ontology(arguments.ontology)
+    logger.info('...Done')

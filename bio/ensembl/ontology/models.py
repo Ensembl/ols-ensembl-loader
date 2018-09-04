@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 import enum
 import logging
-from typing import Iterable
 
 from sqlalchemy import *
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
 import ebi.ols.api.helpers as helpers
-from .db import Base
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,9 @@ logger = logging.getLogger(__name__)
 SQLAlchemy database models for OLS ontologies loading
  
 """
-__all__ = ['Ontology', 'Meta', 'Term', 'Subset', 'RelationType', 'Relation', 'AltId', 'Synonym', 'SynonymTypeEnum']
+
+
+# __all__ = ['Meta', 'Ontology', 'Term', 'Subset', 'RelationType', 'Relation', 'AltId', 'Synonym', 'SynonymTypeEnum']
 
 
 class SynonymTypeEnum(enum.Enum):
@@ -29,23 +30,27 @@ class SynonymTypeEnum(enum.Enum):
 class LoadAble(object):
     _load_map = dict()
 
-    def __init__(self, helper=None, **kwargs) -> None:
-        # print('in it 1', helper, isinstance(helper, helpers.OLSHelper))
-        if helper and isinstance(helper, helpers.OLSHelper):
+    def __init__(self, **kwargs):
+        helper = kwargs.get('helper', None)
+        if helper is not None and isinstance(helper, helpers.OLSHelper):
+            # Retrieve Base Meta constructors args from helper
             constructor_args = {key: getattr(helper, self._load_map.get(key, key), None) for key in dir(self)}
-            # logger.debug('helper %s args: %s', helper.__class__, constructor_args)
+            # allow to override some of helper values before init
+            logger.debug('Helpers params %s ', constructor_args)
             constructor_args.update(**kwargs)
-            logger.debug('__init__ params %s ', constructor_args)
-            super().__init__(**constructor_args)
         else:
-            logger.debug('No Helper %s args: %s', self.__class__, kwargs)
-            super().__init__(**kwargs)
+            constructor_args = kwargs
+        logger.debug('kwargs: %s', self.__class__, constructor_args)
+        super().__init__(**constructor_args)
 
     def __repr__(self):
         class_name = self.__class__.__name__
         attributes = {name: getattr(self, name) for name in dir(self) if
                       isinstance(getattr(self, name), (type(None), str, int, float, bool))}
         return '<{}({})>'.format(class_name, attributes)
+
+
+Base = declarative_base(cls=LoadAble, constructor=LoadAble.__init__)
 
 
 class Meta(Base):
@@ -63,7 +68,7 @@ class Meta(Base):
         return '<Meta(meta_id={}, meta_key={}, meta_value={})>'.format(self.meta_id, self.meta_key, self.meta_value)
 
 
-class Ontology(LoadAble, Base):
+class Ontology(Base):
     __tablename__ = 'ontology'
     __table_args__ = (
         Index('name_namespace_idx', 'name', 'namespace', unique=True),
@@ -121,7 +126,7 @@ class RelationType(Base):
             self.relation_type_id, self.name)
 
 
-class Subset(LoadAble, Base):
+class Subset(Base):
     __tablename__ = 'subset'
 
     _load_map = dict(
@@ -136,7 +141,7 @@ class Subset(LoadAble, Base):
     definition = Column(String(128), nullable=False, server_default=text("''"))
 
 
-class Term(LoadAble, Base):
+class Term(Base):
     __tablename__ = 'term'
     __table_args__ = (
         Index('ontology_acc_idx', 'ontology_id', 'accession', unique=True),
@@ -160,13 +165,13 @@ class Term(LoadAble, Base):
     alt_accession = relationship("AltId", back_populates="term")
 
 
-class AltId(LoadAble, Base):
+class AltId(Base):
     __tablename__ = 'alt_id'
     __table_args__ = (
         Index('term_alt_idx', 'term_id', 'alt_id', unique=True),
     )
 
-    def __dir__(self) -> Iterable[str]:
+    def __dir__(self):
         return ['alt_id', 'term_id', 'accession']
 
     alt_id = Column(Integer, primary_key=True)
@@ -226,7 +231,7 @@ class Relation(Base):
             self.relation_type_id, self.child_term_id, self.parent_term_id, self.relation_type_id)
 
 
-class Synonym(LoadAble, Base):
+class Synonym(Base):
     __tablename__ = 'synonym'
     __table_args__ = (
         Index('term_synonym_idx', 'term_id', 'synonym_id', unique=True),
