@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import contextlib
 import logging
-from os import getenv
 
 import sqlalchemy
 from sqlalchemy.exc import IntegrityError
@@ -10,12 +9,9 @@ from sqlalchemy.orm.exc import NoResultFound
 
 from ensembl.ontology.models import Base
 
-autocommit = getenv('autocommit', False)
-autoflush = getenv('autoflush', False)
-
 logger = logging.getLogger(__name__)
 
-Session = sessionmaker(autocommit=True, autoflush=True)
+Session = sessionmaker()
 
 
 class DataAccessLayer:
@@ -23,26 +19,30 @@ class DataAccessLayer:
     engine = None
     conn_string = None
     metadata = Base.metadata
+    options = {}
     session = None
 
     def db_init(self, conn_string, **options):
         # TODO add autocommit / autoflush in options
-        print('in init', conn_string)
-        self.engine = sqlalchemy.create_engine(conn_string or self.conn_string,
+        self.engine = sqlalchemy.create_engine(conn_string,
                                                pool_recycle=options.get('timeout', 36000),
                                                echo=options.get('echo', False))
-        self.session = Session(bind=self.engine)
-        self.session.close()
-        print(self.session_scope())
+        self.options = options or {}
         self.metadata.create_all(self.engine)
-        # self.session.close()
-        # self.connection = engine.connect()
-        # self.connection.close()
+        self.connection = self.engine.connect()
+
+    def get_session(self):
+        if not self.session or not self.session.is_active:
+            self.session = Session(bind=self.engine, autoflush=self.options.get('autoflush', False),
+                                   autocommit=self.options.get('autocommit', False))
+        return self.session
 
     @contextlib.contextmanager
     def session_scope(self):
         """Provide a transactional scope around a series of operations."""
-        session = Session(bind=self.engine)
+        # get_session = Session(bind=self.engine)
+        session = Session(bind=self.engine, autoflush=self.options.get('autoflush', False),
+                                   autocommit=self.options.get('autocommit', False))
         logger.debug('Open session')
         try:
             yield session
@@ -57,30 +57,33 @@ class DataAccessLayer:
             session.close()
 
 
-dal = DataAccessLayer()
-
-
-def get_one_or_create(model, session,
+def get_one_or_create(model,
                       create_method='',
                       create_method_kwargs=None,
                       **kwargs):
-    # with session_scope() as session:
+    session = dal.get_session()
     try:
-        # print('querying model', model, kwargs)
         obj = session.query(model).filter_by(**kwargs).one()
+        logger.debug('Existing entity %s: %s', model, kwargs)
         return obj, False
     except NoResultFound:
-        kwargs.update(create_method_kwargs or {})
-        # print('created', kwargs)
-        created = getattr(model, create_method, model)(**kwargs)
         try:
+            kwargs.update(create_method_kwargs or {})
+            logger.debug('Not existing %s entity for params %s', model, kwargs)
+            created = getattr(model, create_method, model)(**kwargs)
             session.add(created)
+            session.flush([created])
             session.commit()
-            # print('object created and flushed', created)
+            # print('object is get_session', created in get_session)
+            logger.debug('Created: %s', created)
             return created, True
         except IntegrityError:
+            logger.info('Integrity error upon flush')
             session.rollback()
-            if create_method_kwargs:
+            if create_method_kwargs is not None:
                 [kwargs.pop(key) for key in create_method_kwargs.keys()]
-            # print('search', kwargs)
+            logger.debug('%s', kwargs)
             return session.query(model).filter_by(**kwargs).one(), False
+
+
+dal = DataAccessLayer()
