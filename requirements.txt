@@ -1,2 +1,2 @@
 SQLAlchemy==1.2.11
-ebi-ols-client==1.0.1
+ebi-ols-client

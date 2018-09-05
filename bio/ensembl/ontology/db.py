@@ -42,7 +42,7 @@ class DataAccessLayer:
         """Provide a transactional scope around a series of operations."""
         # get_session = Session(bind=self.engine)
         session = Session(bind=self.engine, autoflush=self.options.get('autoflush', False),
-                                   autocommit=self.options.get('autocommit', False))
+                          autocommit=self.options.get('autocommit', False))
         logger.debug('Open session')
         try:
             yield session
