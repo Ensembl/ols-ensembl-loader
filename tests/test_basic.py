@@ -80,58 +80,11 @@ class TestLoading(unittest.TestCase):
     def testLoadOntologyTerms(self):
         loader = OlsLoader(self.db_url)
         session = dal.get_session()
-        ontology_name = 'cvdo'
+        ontology_name = 'bfo'
         m_ontology = loader.load_ontology(ontology_name)
         expected = loader.load_ontology_terms(m_ontology)
         logger.info('Expected terms %s', expected)
-        s_terms = session.query(Term).filter(Ontology.name == 'cvdo')
+        s_terms = session.query(Term).filter(Ontology.name == 'bfo')
         inserted = s_terms.all()
         logger.info('Inserted terms %s', len(inserted))
         self.assertEqual(expected, len(inserted))
-
-    @ignore_warnings
-    def testLoadSubsets(self):
-        loader = OlsLoader(self.db_url)
-        # print(detail)
-        m_term = loader.load_term('http://purl.obolibrary.org/obo/GO_0006412', 'go')
-        logger.info('Loaded Term: %s', m_term)
-        subsets = loader.load_term_subsets(m_term)
-
-        with loader.session_scope() as session:
-            logger.info('Loaded subsets: %s', subsets)
-            m_subsets = session.query(Subset).all()
-            self.assertEqual(subsets, len(m_subsets))
-
-    @ignore_warnings
-    def testLoadTermRelation(self):
-        loader = OlsLoader(self.db_url)
-        # with loader.session_scope() as get_session:
-        iri = 'http://purl.obolibrary.org/obo/GO_0006412'
-        onto = 'eco'
-        client = OlsClient()
-        term = client.detail(ontology_name=onto, iri=iri, item=helpers.Term)
-
-        for relation in term.relations_types:
-            logger.info('Loading relation %s', relation)
-            # loader.load_term_relations(term.iri, term.ontology_name, relation)
-
-        with loader.session_scope() as session:
-            n_ontologies = session.query(Ontology).count()
-            self.assertGreater(n_ontologies, 1)
-
-    @ignore_warnings
-    def testLoadSynonyms(self):
-        loader = OlsLoader(self.db_url)
-        iri = 'http://purl.obolibrary.org/obo/GO_0008810'
-        onto = 'go'
-        m_term = loader._load_term_synonyms(iri, onto)
-
-    @ignore_warnings
-    def testLoadAltId(self):
-        loader = OlsLoader(self.db_url)
-        iri = 'http://purl.obolibrary.org/obo/GO_0000003'
-        onto = 'go'
-        m_term = loader.load_term(iri, onto)
-        with loader.session_scope() as session:
-            m_term_1 = session.query(Term).filter_by(accession='GO:0000003').one()
-            self.assertGreaterEqual(len(m_term_1.alt_accession), 2)

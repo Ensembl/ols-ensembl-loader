@@ -89,8 +89,7 @@ class OlsLoader(object):
             try:
                 terms = session.query(Term).filter_by(ontology=m_ontology)
                 # FIXME delete all related at once avoid loop over terms
-                for term in terms.all():
-                    term.delete()
+                terms.delete()
                 return True
             except NoResultFound as e:
                 logger.debug('Not found %s', e)
