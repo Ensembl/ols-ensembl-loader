@@ -1,2 +1,3 @@
 SQLAlchemy==1.2.11
 ebi-ols-client
+mysqlclient

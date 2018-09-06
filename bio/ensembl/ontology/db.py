@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
 
-from ensembl.ontology.models import Base
+from .models import Base
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +26,15 @@ class DataAccessLayer:
         # TODO add autocommit / autoflush in options
         self.engine = sqlalchemy.create_engine(conn_string,
                                                pool_recycle=options.get('timeout', 36000),
-                                               echo=options.get('echo', False))
+                                               echo=False,
+                                               convert_unicode=True)
         self.options = options or {}
         self.metadata.create_all(self.engine)
         self.connection = self.engine.connect()
+
+    def wipe_schema(self, conn_string):
+        engine = sqlalchemy.create_engine(conn_string, echo=False)
+        Base.metadata.drop_all(engine)
 
     def get_session(self):
         if not self.session or not self.session.is_active:

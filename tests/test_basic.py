@@ -113,7 +113,7 @@ class TestLoading(unittest.TestCase):
 
         for relation in term.relations_types:
             logger.info('Loading relation %s', relation)
-            loader._load_term_relation(term.iri, term.ontology_name, relation)
+            # loader.load_term_relations(term.iri, term.ontology_name, relation)
 
         with loader.session_scope() as session:
             n_ontologies = session.query(Ontology).count()

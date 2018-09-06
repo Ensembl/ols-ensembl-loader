@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 from bio.ensembl.ontology.loader import OlsLoader
+from bio.ensembl.ontology.db import dal
 # allow loader.py to be run from any path
 os.chdir(os.path.normpath(os.path.join(os.path.abspath(__file__), os.pardir)))
 
@@ -26,10 +27,11 @@ if __name__ == "__main__":
 
     arguments = parser.parse_args(sys.argv[1:])
     logger.setLevel(logging.ERROR if arguments.verbose is False else logging.DEBUG)
-    logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO if arguments.verbose is False else logging.WARNING)
+    logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
     logger.debug('Script arguments %s', arguments)
     args = vars(parser.parse_args())
-    db_name = 'ensembl_ontology_{}'.format(arguments.release)
+    # db_name = 'ensembl_ontology_{}'.format(arguments.release)
+    db_name = 'ols_ontology'
     if arguments.host_url is None:
         db_url = 'sqlite:////' + os.path.dirname(os.path.realpath(__file__)) + '/' + db_name + '.sqlite'
     else:
@@ -37,12 +39,15 @@ if __name__ == "__main__":
     logger.debug('Db Url set to %s', db_url)
     options = {'drop': not arguments.keep, 'echo': arguments.verbose}
     logger.debug('Loader arguments %s %s ', db_url, options)
-    loader = OlsLoader(db_url, **options)
+
     if not arguments.keep:
-        logger.info('Wiping old ontology %s', arguments.ontology)
-        loader.create_schema()
-        loader.wipe_ontology(ontology_name=arguments.ontology)
-        logger.info('...Done')
+        logger.info('Wiping database %s', arguments.ontology)
+        #TODO remove all tables in schema
+        dal.wipe_schema(db_url)
+        logger.info('Database reset %s', arguments.ontology)
+    loader = OlsLoader(db_url, **options)
+    loader.wipe_ontology(ontology_name=arguments.ontology)
+    logger.info('...Done')
     logger.info('Loading ontology %s', arguments.ontology)
-    loader.load_ontology(arguments.ontology)
+    loader.load(arguments.ontology)
     logger.info('...Done')

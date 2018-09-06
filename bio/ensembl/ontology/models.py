@@ -5,7 +5,7 @@ import logging
 from sqlalchemy import *
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import relationship
 
 import ebi.ols.api.helpers as helpers
 
@@ -177,7 +177,7 @@ class AltId(LoadAble, Base):
     term_id = Column(ForeignKey('term.term_id'), nullable=False)
     accession = Column(String(64), nullable=False, index=True)
 
-    term = relationship('Term', back_populates='alt_accession',   cascade="all")
+    term = relationship('Term', back_populates='alt_accession', cascade="all")
 
 
 class Closure(Base):
@@ -221,7 +221,6 @@ class Relation(Base):
     relation_type_id = Column(ForeignKey('relation_type.relation_type_id'), nullable=False, index=True)
     intersection_of = Column(Boolean, nullable=False, server_default=text("'0'"))
     ontology_id = Column(ForeignKey('ontology.ontology_id'), nullable=False, index=True)
-    # ontology_id = Column(Integer)
 
     child_term = relationship('Term', primaryjoin='Relation.child_term_id == Term.term_id',
                               cascade="all")
