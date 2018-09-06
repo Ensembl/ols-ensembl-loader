@@ -1,19 +1,18 @@
 # -*- coding: utf-8 -*-
-import logging
 import unittest
 import warnings
-from os.path import dirname
 
-import bio.ensembl.ontology.models as models
-import ebi.ols.api.helpers as helpers
+from bio.ensembl.ontology.db import *
 from bio.ensembl.ontology.loader import OlsLoader
+from bio.ensembl.ontology.models import *
 from ebi.ols.api.client import OlsClient
-
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(name)s %(levelname)s %(message)s',
-                    datefmt='%m-%d %H:%M')
+import ebi.ols.api.helpers as helpers
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
+                    datefmt='%m-%d %H:%M - %s')
 
 logger = logging.getLogger(__name__)
+
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
 
 
@@ -28,101 +27,64 @@ def ignore_warnings(test_func):
 
 class TestLoading(unittest.TestCase):
     _multiprocess_shared_ = True
-    db_url = 'sqlite:////' + dirname(__file__) + '/test_ontology.db'
+    db_url = 'sqlite://'
 
-    @classmethod
-    def setUp(cls):
-        from os import remove
-        try:
-            remove(dirname(__file__) + '/test_ontology.db')
-            logger.info('Remove old DB %s', dirname(__file__) + '/test_ontology.db')
-        except OSError as e:
-            logger.info('---- Unable to delete old db ----')
-            pass
-        loader = OlsLoader(cls.db_url)
-        loader.create_schema()
+    @ignore_warnings
+    def testInitDb(self):
+        loader = OlsLoader(self.db_url, echo=True)
+        for table_name in ['meta', 'ontology', 'relation_type', 'subset', 'term', 'alt_id', 'closure', 'relation',
+                           'synonym']:
+            self.assertIn(table_name, Base.metadata.tables)
+
+        with dal.session_scope() as session:
+            for meta_info in Base.__subclasses__():
+                self.assertIsNotNone(session.query(meta_info).all())
 
     @ignore_warnings
     def testLoadOntology(self):
+        # test retrieve
+        # test try to create duplicated
         loader = OlsLoader(self.db_url)
-        # print(m_ontology)
-        m_ontology = loader.load_ontology('efo')
+        session = dal.get_session()
+        ontology_name = 'cvdo'
+        m_ontology = loader.load_ontology(ontology_name)
         logger.info('Loaded ontology %s', m_ontology)
+        r_ontology = session.query(Ontology).filter_by(name=ontology_name,
+                                                       namespace=m_ontology.namespace).one()
+        logger.info('(RE) Loaded ontology %s', r_ontology)
+        self.assertEqual(m_ontology.name, r_ontology.name)
+        self.assertEqual(m_ontology.version, r_ontology.version)
+        assert isinstance(r_ontology, Ontology)
+        # automatically create another one with another namespace
+        new_ontology, created = loader.get_or_create(Ontology,
+                                                     name=r_ontology.name,
+                                                     namespace='another_namespace')
+        for i in range(0, 5):
+            session.add(Term(ontology=m_ontology, accession='CCC_00000{}'.format(i), name='Term {}'.format(i),
+                        is_root=False, is_obsolete=False))
 
-        with loader.session_scope() as session:
-            # test retrieve
-            # test try to create duplicated
+        session.commit()
+        self.assertEqual(session.query(Term).count(), 5)
 
-            r_ontology = session.query(models.Ontology).filter_by(name=m_ontology.name,
-                                                                  namespace=m_ontology.namespace).one()
-            logger.info('(RE) Loaded ontology %s', r_ontology)
-            self.assertEqual(m_ontology.name, r_ontology.name)
-            assert isinstance(r_ontology, models.Ontology)
-            # automatically create another one
-            new_ontology, created = loader.get_or_create(models.Ontology,
-                                                         name=r_ontology.name,
-                                                         namespace='another_namespace')
-            self.assertTrue(created)
-            self.assertTrue(new_ontology in session)
+        self.assertTrue(created)
+        ontologies = session.query(Ontology).filter_by(name=ontology_name)
+        self.assertEqual(len(ontologies.all()), 2)
+        self.assertTrue(new_ontology.name == r_ontology.name)
+        loader.wipe_ontology(ontology_name=ontology_name)
+        ontologies = session.query(Ontology).filter_by(name=ontology_name)
+        self.assertEqual(len(ontologies.all()), 0)
+        # test cascade
+        self.assertEqual(session.query(Term).count(), 0)
 
     @ignore_warnings
     def testLoadOntologyTerms(self):
         loader = OlsLoader(self.db_url)
-
-        expected = loader.load_ontology_terms('geno')
+        session = dal.get_session()
+        ontology_name = 'bfo'
+        m_ontology = loader.load_ontology(ontology_name)
+        expected = loader.load_ontology_terms(m_ontology)
         logger.info('Expected terms %s', expected)
-
-        with loader.session_scope() as session:
-            s_terms = session.query(models.Term).filter(models.Ontology.name == 'geno')
-            inserted = s_terms.all()
-            logger.info('Inserted terms %s', len(inserted))
-            if logger.isEnabledFor(logging.DEBUG):
-                [logger.debug(m_term) for m_term in inserted]
-            self.assertEqual(expected, len(inserted))
-
-    @ignore_warnings
-    def testLoadSubsets(self):
-        loader = OlsLoader(self.db_url)
-        # print(detail)
-        m_term = loader.load_term('http://purl.obolibrary.org/obo/GO_0006412', 'go')
-        logger.info('Loaded Term: %s', m_term)
-        subsets = loader.load_term_subsets(m_term)
-
-        with loader.session_scope() as session:
-            logger.info('Loaded subsets: %s', subsets)
-            m_subsets = session.query(models.Subset).all()
-            self.assertEqual(subsets, len(m_subsets))
-
-    @ignore_warnings
-    def testLoadTermRelation(self):
-        loader = OlsLoader(self.db_url)
-        # with loader.session_scope() as session:
-        iri = 'http://purl.obolibrary.org/obo/GO_0006412'
-        onto = 'eco'
-        client = OlsClient()
-        term = client.detail(ontology_name=onto, iri=iri, item=helpers.Term)
-
-        for relation in term.relations_types:
-            logger.info('Loading relation %s', relation)
-            loader.load_term_relation(term.iri, term.ontology_name, relation)
-
-        with loader.session_scope() as session:
-            n_ontologies = session.query(models.Ontology).count()
-            self.assertGreater(n_ontologies, 1)
-
-    @ignore_warnings
-    def testLoadSynonyms(self):
-        loader = OlsLoader(self.db_url)
-        iri = 'http://purl.obolibrary.org/obo/GO_0008810'
-        onto = 'go'
-        m_term = loader.load_term_synonyms(iri, onto)
-
-    @ignore_warnings
-    def testLoadAltId(self):
-        loader = OlsLoader(self.db_url)
-        iri = 'http://purl.obolibrary.org/obo/GO_0000003'
-        onto = 'go'
-        m_term = loader.load_term(iri, onto)
-        with loader.session_scope() as session:
-            m_term_1 = session.query(models.Term).filter_by(accession='GO:0000003').one()
-            self.assertGreaterEqual(len(m_term_1.alt_accession), 2)
+        s_terms = session.query(Term).filter(Ontology.name == 'bfo')
+        inserted = s_terms.all()
+        logger.info('Inserted terms %s', len(inserted))
+        self.assertEqual(expected, len(inserted))
