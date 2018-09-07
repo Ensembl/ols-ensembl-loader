@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 # @author Marc Chakiachvili
+
 from urllib import parse
 
 import eHive
 
-from .loader import OlsLoader
+from loader import OlsLoader
 
 
 class OLSHiveLoader(eHive.BaseRunnable):
     """ OLS MySQL loader runnable class for eHive integration """
+    base_schema = 'ensembl_ontology'
 
     def param_defaults(self):
         return {
@@ -17,6 +19,7 @@ class OLSHiveLoader(eHive.BaseRunnable):
         }
 
     def fetch_input(self):
+        pass
         assert self.param_required('ontology_name') in OlsLoader.ONTOLOGIES_LIST
         # TODO Check db exists
         db_url_parts = parse.urlparse(self.param_required('db_url'))
@@ -29,14 +32,14 @@ class OLSHiveLoader(eHive.BaseRunnable):
         # TODO Delete it if exists
 
     def run(self):
-        self.warning("Ontology {} will be wiped from database " % self.param_required('wipe_before'))
+        self.warning("Ontology {} will be wiped from database ".format(self.param_required('wipe_before_run')))
         # False => erreur marque le job en failed, i.e pas de retry
         self.input_job.transient_error = False
         # TODO add default options
-        ols_loader = OlsLoader(self.param_required('base_url'))
-        if self.param_required('wipe_before_run'):
+        ols_loader = OlsLoader(self.param_required('db_url'))
+        if self.param_required('wipe_before_run') is True:
             ols_loader.wipe_ontology(self.param_required('ontology_name'))
-        ols_loader.load_ontology(self.param_required('ontology_name'))
+        ols_loader.load(self.param_required('ontology_name'))
 
     def write_output(self):
         pass

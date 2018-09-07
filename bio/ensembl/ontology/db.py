@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import contextlib
 import logging
+from urllib.parse import urlparse
 
 import sqlalchemy
 from sqlalchemy.exc import IntegrityError
@@ -23,10 +24,11 @@ class DataAccessLayer:
     session = None
 
     def db_init(self, conn_string, **options):
-        # TODO add autocommit / autoflush in options
+
         self.engine = sqlalchemy.create_engine(conn_string,
                                                pool_recycle=options.get('timeout', 36000),
                                                echo=False,
+                                               encoding='latin-1',
                                                convert_unicode=True)
         self.options = options or {}
         self.metadata.create_all(self.engine)

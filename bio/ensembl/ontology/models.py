@@ -238,7 +238,7 @@ class Synonym(LoadAble, Base):
     __tablename__ = 'synonym'
     __table_args__ = (
         Index('term_synonym_idx', 'term_id', 'synonym_id', unique=True),
-        Index('term_name_idx', 'name', mysql_length=2048),
+        # Index('term_name_idx', 'name', mysql_length=2048),
     )
 
     synonym_id = Column(Integer, primary_key=True)
