@@ -26,35 +26,48 @@ class OlsLoader(object):
 
     _session = None
 
+    _default_options = dict(
+        echo=False,
+        wipe=True
+    )
+
     def __init__(self, url, **options):
         self.db_url = url
-        self.options = options
+        self.options = options or self._default_options
         self.client = OlsClient()
-        dal.db_init(self.db_url, **options)
+        dal.db_init(self.db_url, **self.options)
+
+    def db_init(self):
+        dal.db_init(self.db_url, **self.options)
+
+    def init_meta(self):
+        metas = {
+            'schema_version': self.options('db_version'),
+            'schema_type': 'ontology'
+        }
+        with dal.session_scope() as session:
+            for meta_key, meta_value in metas.items():
+                get_one_or_create(Meta, meta_key=meta_key,
+                                  create_method_kwargs=dict(meta_value=meta_value))
 
     @property
     def session(self):
         return dal.get_session()
 
-    def get_or_create(self, model, create_method='', create_method_kwargs=None, **kwargs):
-        return get_one_or_create(model, create_method, create_method_kwargs, **kwargs)
-
-    def load(self, ontology_name='all'):
-        if ontology_name != 'all':
-            m_ontology = self.load_ontology(ontology_name)
+    def load(self, ontology_name):
+        # run process for all defaults ontologies setup
+        for ontology in self.ONTOLOGIES_LIST:
+            m_ontology = self.load_ontology(ontology)
             self.load_ontology_terms(m_ontology)
-        else:
-            # run process for all defaults ontologies setup
-            # TODO LOAD META on process start
-            for ontology in self.ONTOLOGIES_LIST:
-                m_ontology = self.load_ontology(ontology)
-                self.load_ontology_terms(m_ontology)
 
     def load_ontology(self, ontology_name, namespace=None):
+        if self.options.get('wipe', False):
+            logger.debug('Removing ontology %s', ontology_name)
+            self.wipe_ontology(ontology_name)
         o_ontology = self.client.ontology(ontology_name)
-        m_ontology, created = self.get_or_create(Ontology, name=o_ontology.ontology_id,
-                                                 namespace=namespace or o_ontology.namespace,
-                                                 create_method_kwargs={'helper': o_ontology})
+        m_ontology, created = get_one_or_create(Ontology, name=o_ontology.ontology_id,
+                                                namespace=namespace or o_ontology.namespace,
+                                                create_method_kwargs={'helper': o_ontology})
         logger.info('Loaded ontology %s', m_ontology)
         return m_ontology
 
@@ -65,35 +78,11 @@ class OlsLoader(object):
                 logger.debug('Delete ontology %s', ontology_name)
                 ontologies = session.query(Ontology).filter_by(name=ontology_name)
                 for ontology in ontologies:
-                    OlsLoader.wipe_terms(ontology.id)
-                ontologies.delete()
-                session.flush()
+                    session.delete(ontology)
                 return True
             except NoResultFound:
                 logger.debug('Ontology not found')
         return False
-
-        # TODO for ontology name, load all relations for all inserted terms
-
-    @staticmethod
-    def wipe_terms(ontology, namespace=None):
-        with dal.session_scope() as session:
-            if type(ontology) is int:
-                m_ontology = session.query(Ontology).get(ontology)
-            elif type(ontology) is str:
-                m_ontology = session.query(Ontology).filter_by(name=ontology, namespace=namespace or ontology).one()
-            elif isinstance(ontology, Ontology):
-                m_ontology = ontology
-            else:
-                raise RuntimeError('Wrong parameter')
-            try:
-                terms = session.query(Term).filter_by(ontology=m_ontology)
-                # FIXME delete all related at once avoid loop over terms
-                terms.delete()
-                return True
-            except NoResultFound as e:
-                logger.debug('Not found %s', e)
-            return False
 
     def load_term_relations(self, m_term, relation_type):
         rel_name = self.__relation_map.get(relation_type.name, relation_type.name)
@@ -115,27 +104,27 @@ class OlsLoader(object):
                             logger.debug('  Term is defined in another expected ontology: %s', ro_term.ontology_name)
                             # load ontology
                             o_onto_details = self.client.ontology(ro_term.ontology_name)
-                            r_ontology, created = self.get_or_create(Ontology, name=o_onto_details.ontology_id,
-                                                                     namespace=ro_term.obo_name_space,
-                                                                     create_method_kwargs=dict(
-                                                                         version=o_onto_details.version,
-                                                                         title=o_onto_details.title))
+                            r_ontology, created = get_one_or_create(Ontology, name=o_onto_details.ontology_id,
+                                                                    namespace=ro_term.obo_name_space,
+                                                                    create_method_kwargs=dict(
+                                                                        version=o_onto_details.version,
+                                                                        title=o_onto_details.title))
                         else:
                             r_ontology = None
                     if r_ontology is not None:
-                        m_related, created = self.get_or_create(Term,
-                                                                accession=o_related.obo_id,
-                                                                create_method_kwargs=dict(
-                                                                    helper=o_related,
-                                                                    ontology=r_ontology,
-                                                                ))
+                        m_related, created = get_one_or_create(Term,
+                                                               accession=o_related.obo_id,
+                                                               create_method_kwargs=dict(
+                                                                   helper=o_related,
+                                                                   ontology=r_ontology,
+                                                               ))
                         # FIXME what to do when term listed in onto is not from this onto ?
                         # m_related = self.load_term(o_related.iri)
-                        relation, r_created = self.get_or_create(Relation,
-                                                                 child_term=m_related,
-                                                                 parent_term=m_term,
-                                                                 relation_type=relation_type,
-                                                                 ontology=m_term.ontology)
+                        relation, r_created = get_one_or_create(Relation,
+                                                                child_term=m_related,
+                                                                parent_term=m_term,
+                                                                relation_type=relation_type,
+                                                                ontology=m_term.ontology)
                         n_relations += 1 if r_created else None
                         logger.info('Loaded relation %s %s %s', m_term.accession, rel_name, m_related.accession)
             else:
@@ -143,11 +132,12 @@ class OlsLoader(object):
         logger.info('   ... Done')
         return n_relations
 
-    def _load_term_synonyms(self, o_term):
+    def _load_term_synonyms(self, m_term: Term, synonyms):
         logger.info('   Loading term synonyms...')
-        session = self.session
-        session.query(Synonym).filter(Synonym.term_id == o_term.obo_id).delete()
-        m_term = session.query(Term).filter_by(accession=o_term.obo_id).one()
+        session = dal.get_session()
+
+        session.query(Synonym).filter(Synonym.term_id == m_term.term_id).delete()
+        m_term = session.query(Term).filter_by(accession=m_term.term_id).one()
         n_synonyms = 0
         synonym_map = {
             'hasExactSynonym': 'EXACT',
@@ -155,18 +145,19 @@ class OlsLoader(object):
             'hasNarrowSynonym': 'NARROW',
             'hasRelatedSynonym': 'RELATED'
         }
-        if o_term.obo_synonym:
-            for synonym in o_term.obo_synonym:
-                if isinstance(synonym, dict):
-                    logger.info('   Term synonym %s - %s', synonym['name'], synonym_map[synonym['scope']])
-                    db_xref = synonym['xrefs'][0]['database'] + ':' + synonym['xrefs'][0]['id'] \
-                        if 'xrefs' in synonym and len(synonym['xrefs']) > 0 else ''
-                    m_syno, created = self.get_or_create(Synonym, term=m_term, name=synonym['name'],
-                                                         create_method_kwargs=dict(
-                                                             db_xref=db_xref,
-                                                             type=synonym_map[synonym['scope']]))
-                    n_synonyms += 1 if created else None
+        obo_synonyms = synonyms or []
+        for synonym in obo_synonyms:
+            if isinstance(synonym, dict):
+                logger.info('   Term synonym %s - %s', synonym['name'], synonym_map[synonym['scope']])
+                db_xref = synonym['xrefs'][0]['database'] + ':' + synonym['xrefs'][0]['id'] \
+                    if 'xrefs' in synonym and len(synonym['xrefs']) > 0 else ''
+                m_syno, created = get_one_or_create(Synonym, term=m_term, name=synonym['name'],
+                                                    create_method_kwargs=dict(
+                                                        db_xref=db_xref,
+                                                        type=synonym_map[synonym['scope']]))
+                n_synonyms += 1 if created else None
         logger.info('   ... Done')
+        return n_synonyms
 
     def load_ontology_terms(self, ontology):
         # todo delete current terms ?
@@ -186,28 +177,28 @@ class OlsLoader(object):
         for o_term in terms:
             if o_term.is_defining_ontology and o_term.obo_id:
                 logger.debug('Loaded term (from OLS) %s', o_term)
-                ontology, created = self.get_or_create(Ontology, name=m_ontology.name,
-                                                       namespace=o_term.obo_name_space or m_ontology.name,
-                                                       create_method_kwargs=dict(
-                                                           version=m_ontology.version,
-                                                           title=m_ontology.title))
+                ontology, created = get_one_or_create(Ontology, name=m_ontology.name,
+                                                      namespace=o_term.obo_name_space or m_ontology.name,
+                                                      create_method_kwargs=dict(
+                                                          version=m_ontology.version,
+                                                          title=m_ontology.title))
                 self.load_term(o_term, ontology)
                 nb_terms += 1
         return nb_terms
 
     def load_term(self, o_term, m_ontology):
         logger.debug('Adding/Retrieving namespaced ontology %s', o_term.obo_name_space)
-        m_term, created = self.get_or_create(Term, accession=o_term.obo_id,
-                                             create_method_kwargs=dict(helper=o_term,
-                                                                       ontology=m_ontology))
+        m_term, created = get_one_or_create(Term, accession=o_term.obo_id,
+                                            create_method_kwargs=dict(helper=o_term,
+                                                                      ontology=m_ontology))
         if created:
             logger.info('Create term %s ...', m_term)
             self.load_term_subsets(m_term)
             for relation in o_term.relations_types:
                 # updates relation types
-                relation_type, created = self.get_or_create(RelationType, name=relation)
+                relation_type, created = get_one_or_create(RelationType, name=relation)
                 self.load_term_relations(m_term, relation_type)
-            self._load_term_synonyms(o_term)
+            self._load_term_synonyms(m_term, o_term.obo_synonym)
             for alt_id in o_term.annotation.has_alternative_id:
                 logger.info('Loaded AltId %s', alt_id)
                 m_term.alt_accession.append(AltId(accession=alt_id))
@@ -223,23 +214,10 @@ class OlsLoader(object):
                                                                     'type': 'property'})
             if len(search) == 1:
                 details = self.client.detail(search[0])
-                subset, created = self.get_or_create(Subset, name=subset_name,
-                                                     definition=details.definition or '')
+                subset, created = get_one_or_create(Subset, name=subset_name,
+                                                    definition=details.definition or '')
                 if created:
                     logger.info('      Created subset [%s: %s]', subset.subset_id, subset_name)
                     subsets += 1
         logger.info('   ... Done')
         return subsets
-
-    def _term_api(self, iri, ontology_name=None, unique=True):
-        if ontology_name is not None:
-            return self.client.detail(ontology_name=ontology_name, iri=iri, item=helpers.Term, unique=unique)
-        else:
-            return self.client.term(identifier=iri, unique=True, silent=True)
-
-    def _term_object(self, o_term: helpers.Term):
-        m_ontology = self._load_ontology_model(o_term.ontology_name)
-        m_term, created = self.get_or_create(Term, accession=o_term.accession,
-                                             create_method_kwargs=dict(ontology=m_ontology,
-                                                                       helper=o_term))
-        return m_term
