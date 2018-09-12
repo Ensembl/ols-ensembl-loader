@@ -134,14 +134,15 @@ class Subset(LoadAble, Base):
         return ['subset_id', 'name', 'definition']
 
     subset_id = Column(Integer, primary_key=True)
-    name = Column(String(64), nullable=False, unique=True)
-    definition = Column(String(128), nullable=False, server_default=text("''"))
+    name = Column(String(64, convert_unicode=True), nullable=False, unique=True)
+    definition = Column(String(128, convert_unicode=True), nullable=False, server_default=text("''"))
 
 
 class Term(LoadAble, Base):
     __tablename__ = 'term'
     __table_args__ = (
         Index('ontology_acc_idx', 'ontology_id', 'accession', unique=True),
+        Index('term_name_idx', 'name', mysql_length=100),
     )
 
     def __dir__(self):
@@ -152,8 +153,8 @@ class Term(LoadAble, Base):
     ontology_id = Column(ForeignKey(Ontology.id), nullable=False)
     subsets = Column(Text(65535))
     accession = Column(String(64), nullable=False, unique=True)
-    name = Column(String(255), nullable=False, index=True)
-    description = Column('definition', Text(65535))
+    name = Column(Text(65535, convert_unicode=True), nullable=False)
+    description = Column('definition', Text(65535, convert_unicode=True))
     is_root = Column(Boolean, nullable=False, default=False)
     is_obsolete = Column(Boolean, nullable=False, default=False)
     iri = Column(Text(65535))
@@ -266,9 +267,9 @@ class Synonym(LoadAble, Base):
 
     synonym_id = Column(Integer, primary_key=True)
     term_id = Column(ForeignKey('term.term_id'), nullable=False)
-    name = Column(Text(65535), nullable=False)
+    name = Column(Text(65535, convert_unicode=True), nullable=False)
     type = Column(Enum(SynonymTypeEnum))
-    db_xref = Column('dbxref', VARCHAR(255), nullable=True)
+    db_xref = Column('dbxref', String(255, convert_unicode=True), nullable=True)
 
     term = relationship('Term', cascade="all")
 

@@ -28,7 +28,6 @@ class DataAccessLayer:
         self.engine = sqlalchemy.create_engine(conn_string,
                                                pool_recycle=options.get('timeout', 36000),
                                                echo=False,
-                                               encoding='latin-1',
                                                convert_unicode=True)
         self.options = options or {}
         self.metadata.create_all(self.engine)

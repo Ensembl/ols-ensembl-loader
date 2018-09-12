@@ -1,5 +1,9 @@
 #  -*- coding: utf-8 -*-
 
+import datetime
+
+import dateutil.parser
+
 import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.db import *
 from bio.ensembl.ontology.models import *
@@ -21,19 +25,21 @@ class OlsLoader(object):
     }
 
     # TODO check PBQ, FYPO-EXTENSION, FYPO_GO
-    ONTOLOGIES_LIST = ['go', 'so', 'pato', 'hpo', 'vt', 'efo', 'po', 'eo', 'to', 'chebi', 'pro', 'fypo',
-                       'peco', 'bfo', 'bto', 'cl', 'cmo', 'eco', 'mp', 'ogms', 'uo']  # PBQ? FROM old script order
+    ONTOLOGIES_LIST = ['go', 'so', 'pato', 'hp', 'vt', 'efo', 'po', 'eo', 'to', 'chebi', 'pr', 'fypo', 'peco', 'bfo',
+                       'bto', 'cl', 'cmo', 'eco', 'mp', 'ogms', 'uo']  # PBQ? FROM old script order
 
     _session = None
 
     _default_options = dict(
         echo=False,
-        wipe=True
+        wipe=True,
+
     )
 
     def __init__(self, url, **options):
         self.db_url = url
-        self.options = options or self._default_options
+        self.options = self._default_options
+        self.options.update(options)
         self.client = OlsClient()
         dal.db_init(self.db_url, **self.options)
 
@@ -42,13 +48,12 @@ class OlsLoader(object):
 
     def init_meta(self):
         metas = {
-            'schema_version': self.options('db_version'),
+            'schema_version': self.options.get('db_version'),
             'schema_type': 'ontology'
         }
-        with dal.session_scope() as session:
-            for meta_key, meta_value in metas.items():
-                get_one_or_create(Meta, meta_key=meta_key,
-                                  create_method_kwargs=dict(meta_value=meta_value))
+        for meta_key, meta_value in metas.items():
+            get_one_or_create(Meta, meta_key=meta_key,
+                              create_method_kwargs=dict(meta_value=meta_value))
 
     @property
     def session(self):
@@ -65,6 +70,12 @@ class OlsLoader(object):
             logger.debug('Removing ontology %s', ontology_name)
             self.wipe_ontology(ontology_name)
         o_ontology = self.client.ontology(ontology_name)
+        get_one_or_create(Meta, meta_key=ontology_name + '_file_date',
+                          create_method_kwargs=dict(
+                              meta_value=dateutil.parser.parse(o_ontology.updated).strftime('%c')))
+        get_one_or_create(Meta, meta_key=ontology_name + '_load_date',
+                          create_method_kwargs=dict(meta_value=datetime.datetime.now().strftime('%c')))
+
         m_ontology, created = get_one_or_create(Ontology, name=o_ontology.ontology_id,
                                                 namespace=namespace or o_ontology.namespace,
                                                 create_method_kwargs={'helper': o_ontology})
@@ -135,9 +146,7 @@ class OlsLoader(object):
     def _load_term_synonyms(self, m_term: Term, synonyms):
         logger.info('   Loading term synonyms...')
         session = dal.get_session()
-
         session.query(Synonym).filter(Synonym.term_id == m_term.term_id).delete()
-        m_term = session.query(Term).filter_by(accession=m_term.term_id).one()
         n_synonyms = 0
         synonym_map = {
             'hasExactSynonym': 'EXACT',
@@ -201,7 +210,7 @@ class OlsLoader(object):
             self._load_term_synonyms(m_term, o_term.obo_synonym)
             for alt_id in o_term.annotation.has_alternative_id:
                 logger.info('Loaded AltId %s', alt_id)
-                m_term.alt_accession.append(AltId(accession=alt_id))
+                m_term.alt_ids.append(AltId(accession=alt_id))
             logger.info('... Done')
         return m_term
 
