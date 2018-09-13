@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 SQLAlchemy database models for OLS ontologies loading
  
 """
-__all__ = ['Ontology', 'Meta', 'Term', 'Subset', 'RelationType', 'Relation', 'AltId', 'Synonym', 'SynonymTypeEnum']
+__all__ = ['Ontology', 'Meta', 'Term', 'Subset', 'RelationType', 'Closure', 'Relation', 'AltId', 'Synonym',
+           'SynonymTypeEnum']
 
 
 class SynonymTypeEnum(enum.Enum):
@@ -111,19 +112,15 @@ class Ontology(LoadAble, Base):
         else:
             self._version = version
 
-    def __repr__(self):
-        return '<Ontology(id={}, name={}, namespace={})>'.format(self.id, self.name, self.namespace)
 
-
-class RelationType(Base):
+class RelationType(LoadAble, Base):
     __tablename__ = 'relation_type'
+
+    def __dir__(self):
+        return ['relation_type_id', 'name']
 
     relation_type_id = Column(Integer, primary_key=True)
     name = Column(String(64), nullable=False, unique=True)
-
-    def __repr__(self):
-        return '<RelationType(relation_type_id={}, name={})>'.format(
-            self.relation_type_id, self.name)
 
 
 class Subset(LoadAble, Base):
@@ -137,14 +134,15 @@ class Subset(LoadAble, Base):
         return ['subset_id', 'name', 'definition']
 
     subset_id = Column(Integer, primary_key=True)
-    name = Column(String(64), nullable=False, unique=True)
-    definition = Column(String(128), nullable=False, server_default=text("''"))
+    name = Column(String(64, convert_unicode=True), nullable=False, unique=True)
+    definition = Column(String(128, convert_unicode=True), nullable=False, server_default=text("''"))
 
 
 class Term(LoadAble, Base):
     __tablename__ = 'term'
     __table_args__ = (
         Index('ontology_acc_idx', 'ontology_id', 'accession', unique=True),
+        Index('term_name_idx', 'name', mysql_length=100),
     )
 
     def __dir__(self):
@@ -155,13 +153,36 @@ class Term(LoadAble, Base):
     ontology_id = Column(ForeignKey(Ontology.id), nullable=False)
     subsets = Column(Text(65535))
     accession = Column(String(64), nullable=False, unique=True)
-    name = Column(String(255), nullable=False, index=True)
-    description = Column('definition', Text(65535))
-    is_root = Column(Boolean, nullable=False)
-    is_obsolete = Column(Boolean, nullable=False)
+    name = Column(Text(65535, convert_unicode=True), nullable=False)
+    description = Column('definition', Text(65535, convert_unicode=True))
+    is_root = Column(Boolean, nullable=False, default=False)
+    is_obsolete = Column(Boolean, nullable=False, default=False)
     iri = Column(Text(65535))
 
-    alt_accession = relationship("AltId", back_populates="term")
+    alt_ids = relationship("AltId", back_populates="term", cascade='all')
+    synonyms = relationship("Synonym", cascade="delete")
+    child_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.parent_term_id')
+    parent_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.child_term_id')
+
+    child_closures = relationship('Closure', foreign_keys='Closure.child_term_id', cascade='delete')
+    parent_closures = relationship('Closure', foreign_keys='Closure.parent_term_id', cascade='delete')
+    subparent_closures = relationship('Closure', foreign_keys='Closure.subparent_term_id', cascade='delete')
+
+    def add_child_relation(self, child_term, ontology, rel_type):
+        relation = Relation(parent_term=self, child_term=child_term, ontology=ontology, relation_type=rel_type)
+        self.child_terms.append(relation)
+        return relation
+
+    def add_parent_relation(self, parent_term, ontology, rel_type):
+        relation = Relation(parent_term=parent_term, child_term=self, ontology=ontology, relation_type=rel_type)
+        self.parent_terms.append(relation)
+        return relation
+
+    def closures(self):
+        childs = self.child_closures.all()
+        parents = self.parent_closures.all()
+        subparents = self.subparent_closures.all()
+        return childs + parents + subparents
 
 
 class AltId(LoadAble, Base):
@@ -177,16 +198,19 @@ class AltId(LoadAble, Base):
     term_id = Column(ForeignKey('term.term_id'), nullable=False)
     accession = Column(String(64), nullable=False, index=True)
 
-    term = relationship('Term', back_populates='alt_accession', cascade="all")
+    term = relationship('Term', back_populates='alt_ids')
 
 
-class Closure(Base):
+class Closure(LoadAble, Base):
     # NOT USE for now, closure is computed by perl standard script
     __tablename__ = 'closure'
     __table_args__ = (
         Index('child_parent_idx', 'child_term_id', 'parent_term_id', 'subparent_term_id', 'ontology_id', unique=True),
         Index('parent_subparent_idx', 'parent_term_id', 'subparent_term_id')
     )
+
+    def __dir__(self):
+        return ['closure_id', 'ontology', 'child_term_id', 'parent_term_id']
 
     closure_id = Column(Integer, primary_key=True)
     child_term_id = Column(ForeignKey('term.term_id'), nullable=False)
@@ -196,16 +220,13 @@ class Closure(Base):
     ontology_id = Column(ForeignKey('ontology.ontology_id'), nullable=False, index=True)
     confident_relationship = Column(Integer, nullable=False, server_default=text("'0'"))
 
-    child_term = relationship('Term', primaryjoin='Closure.child_term_id == Term.term_id')
-    ontology = relationship('Ontology', cascade="all")
+    ontology = relationship('Ontology')
+    child_term = relationship('Term', primaryjoin='Closure.child_term_id == Term.term_id',
+                              back_populates='child_closures')
     parent_term = relationship('Term', primaryjoin='Closure.parent_term_id == Term.term_id',
-                               cascade="all")
+                               back_populates='parent_closures')
     subparent_term = relationship('Term', primaryjoin='Closure.subparent_term_id == Term.term_id',
-                                  cascade="all")
-
-    def __repr__(self):
-        return '<Closure(closure_id={}, child_term_id={}, parent_term_id={}, ontology_id={}, distance={})>'.format(
-            self.closure_id, self.child_term_id, self.parent_term_id, self.ontology_id, self.distance)
+                                  back_populates='subparent_closures')
 
 
 class Relation(Base):
@@ -215,6 +236,9 @@ class Relation(Base):
               'ontology_id', unique=True),
     )
 
+    def __dir__(self):
+        return ['relation_id', 'ontology', 'relation_type', 'parent_term', 'child_term']
+
     relation_id = Column(Integer, primary_key=True)
     child_term_id = Column(ForeignKey('term.term_id'), nullable=False)
     parent_term_id = Column(ForeignKey('term.term_id'), nullable=False, index=True)
@@ -223,29 +247,29 @@ class Relation(Base):
     ontology_id = Column(ForeignKey('ontology.ontology_id'), nullable=False, index=True)
 
     child_term = relationship('Term', primaryjoin='Relation.child_term_id == Term.term_id',
-                              cascade="all")
+                              back_populates='parent_terms')
     parent_term = relationship('Term', primaryjoin='Relation.parent_term_id == Term.term_id',
-                               cascade="all")
-    ontology = relationship('Ontology', cascade="all")
-    relation_type = relationship('RelationType', cascade="all")
+                               back_populates='child_terms')
+    ontology = relationship('Ontology')
+    relation_type = relationship('RelationType')
 
     def __repr__(self):
-        return '<Relation(relation_id={}, child_term_id={}, parent_term_id={}, relation_type_id={})>'.format(
-            self.relation_type_id, self.child_term_id, self.parent_term_id, self.relation_type_id)
+        return '<Relatiosddn(relation_id={}, child_term_id={}, parent_term_id={}, relation_type={})>'.format(
+            self.relation_id, self.child_term.accession, self.parent_term.accession, self.relation_type.name)
 
 
 class Synonym(LoadAble, Base):
     __tablename__ = 'synonym'
     __table_args__ = (
         Index('term_synonym_idx', 'term_id', 'synonym_id', unique=True),
-        Index('term_name_idx', 'name', mysql_length=2048),
+        # Index('term_name_idx', 'name', mysql_length=2048),
     )
 
     synonym_id = Column(Integer, primary_key=True)
     term_id = Column(ForeignKey('term.term_id'), nullable=False)
-    name = Column(Text(65535), nullable=False)
+    name = Column(Text(65535, convert_unicode=True), nullable=False)
     type = Column(Enum(SynonymTypeEnum))
-    db_xref = Column('dbxref', VARCHAR(255), nullable=True)
+    db_xref = Column('dbxref', String(255, convert_unicode=True), nullable=True)
 
     term = relationship('Term', cascade="all")
 
