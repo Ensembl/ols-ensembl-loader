@@ -5,7 +5,7 @@ import logging
 from sqlalchemy import *
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, synonym
 
 import ebi.ols.api.helpers as helpers
 
@@ -18,6 +18,8 @@ SQLAlchemy database models for OLS ontologies loading
 __all__ = ['Ontology', 'Meta', 'Term', 'Subset', 'RelationType', 'Closure', 'Relation', 'AltId', 'Synonym',
            'SynonymTypeEnum']
 
+long_string = String(1000)
+long_string = long_string.with_variant(String(1000, collation='utf8_general_ci'), 'mysql')
 
 class SynonymTypeEnum(enum.Enum):
     EXACT = 'EXACT'
@@ -85,7 +87,7 @@ class Ontology(LoadAble, Base):
     _version = Column('data_version', String(64), nullable=True)
     title = Column(String(255), nullable=True)
 
-    terms = relationship('Term', cascade="all,delete", backref="ontology")
+    terms = relationship('Term', cascade="all, delete", backref="ontology")
 
     @hybrid_property
     def namespace(self):
@@ -111,6 +113,9 @@ class Ontology(LoadAble, Base):
             self._version = version.version
         else:
             self._version = version
+
+    namespace = synonym('_namespace', descriptor=namespace)
+    version = synonym('_version', descriptor=version)
 
 
 class RelationType(LoadAble, Base):
@@ -151,13 +156,15 @@ class Term(LoadAble, Base):
 
     term_id = Column(Integer, primary_key=True)
     ontology_id = Column(ForeignKey(Ontology.id), nullable=False)
-    subsets = Column(Text(65535))
+    subsets = Column(Unicode(1000))
     accession = Column(String(64), nullable=False, unique=True)
-    name = Column(Text(65535, convert_unicode=True), nullable=False)
-    description = Column('definition', Text(65535, convert_unicode=True))
+    name = Column(long_string, nullable=False)
+
+    description = Column('definition', long_string)
+
     is_root = Column(Boolean, nullable=False, default=False)
     is_obsolete = Column(Boolean, nullable=False, default=False)
-    iri = Column(Text(65535))
+    iri = Column(Unicode(1000))
 
     alt_ids = relationship("AltId", back_populates="term", cascade='all')
     synonyms = relationship("Synonym", cascade="delete")
@@ -183,6 +190,17 @@ class Term(LoadAble, Base):
         parents = self.parent_closures.all()
         subparents = self.subparent_closures.all()
         return childs + parents + subparents
+
+    """
+    @hybrid_property
+    def description(self):
+        return self._description
+
+    @description.setter
+    def description(self, description):
+        print('///', description.encode().decode('iso8859-1', 'ignore'))
+        self._description = description.encode().decode('iso8859-1', 'ignore')
+    """
 
 
 class AltId(LoadAble, Base):
@@ -267,9 +285,9 @@ class Synonym(LoadAble, Base):
 
     synonym_id = Column(Integer, primary_key=True)
     term_id = Column(ForeignKey('term.term_id'), nullable=False)
-    name = Column(Text(65535, convert_unicode=True), nullable=False)
+    name = Column('name', long_string, nullable=False)
     type = Column(Enum(SynonymTypeEnum))
-    db_xref = Column('dbxref', String(255, convert_unicode=True), nullable=True)
+    db_xref = Column('dbxref', Unicode(500), nullable=True)
 
     term = relationship('Term', cascade="all")
 

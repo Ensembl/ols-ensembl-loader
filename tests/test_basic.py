@@ -3,9 +3,11 @@ import datetime
 import unittest
 import warnings
 
+import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.db import *
 from bio.ensembl.ontology.loader import OlsLoader
 from bio.ensembl.ontology.models import *
+from ebi.ols.api.client import OlsClient
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
@@ -32,6 +34,7 @@ class TestLoading(unittest.TestCase):
     def setUp(self):
         super().setUp()
         self.loader = OlsLoader(self.db_url)
+        self.client = OlsClient()
 
     @ignore_warnings
     def testInitDb(self):
@@ -91,11 +94,11 @@ class TestLoading(unittest.TestCase):
     @ignore_warnings
     def testLoadOntologyTerms(self):
         session = dal.get_session()
-        ontology_name = 'bfo'
+        ontology_name = 'fypo'
         m_ontology = self.loader.load_ontology(ontology_name)
         expected = self.loader.load_ontology_terms(m_ontology)
         logger.info('Expected terms %s', expected)
-        s_terms = session.query(Term).filter(Ontology.name == 'bfo')
+        s_terms = session.query(Term).filter(Ontology.name == ontology_name)
         inserted = s_terms.all()
         logger.info('Inserted terms %s', len(inserted))
         self.assertEqual(expected, len(inserted))
@@ -142,3 +145,12 @@ class TestLoading(unittest.TestCase):
         session = dal.get_session()
         metas = session.query(Meta).all()
         self.assertGreaterEqual(len(metas), 2)
+
+    @ignore_warnings
+    def testEncodingTerm(self):
+        m_ontology = self.loader.load_ontology('fypo')
+        term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0005645')
+        o_term = self.client.detail(term)
+        print(o_term)
+        m_term = self.loader.load_term(o_term, m_ontology)
+        print(m_term)

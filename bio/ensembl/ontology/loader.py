@@ -32,8 +32,7 @@ class OlsLoader(object):
 
     _default_options = dict(
         echo=False,
-        wipe=True,
-
+        wipe=False,
     )
 
     def __init__(self, url, **options):
@@ -132,8 +131,8 @@ class OlsLoader(object):
                         # FIXME what to do when term listed in onto is not from this onto ?
                         # m_related = self.load_term(o_related.iri)
                         relation, r_created = get_one_or_create(Relation,
-                                                                child_term=m_related,
-                                                                parent_term=m_term,
+                                                                parent_term=m_related,
+                                                                child_term=m_term,
                                                                 relation_type=relation_type,
                                                                 ontology=m_term.ontology)
                         n_relations += 1 if r_created else None
@@ -143,7 +142,7 @@ class OlsLoader(object):
         logger.info('   ... Done')
         return n_relations
 
-    def _load_term_synonyms(self, m_term: Term, synonyms):
+    def _load_term_synonyms(self, m_term: Term, o_term: helpers.Term):
         logger.info('   Loading term synonyms...')
         session = dal.get_session()
         session.query(Synonym).filter(Synonym.term_id == m_term.term_id).delete()
@@ -154,10 +153,10 @@ class OlsLoader(object):
             'hasNarrowSynonym': 'NARROW',
             'hasRelatedSynonym': 'RELATED'
         }
-        obo_synonyms = synonyms or []
+        obo_synonyms = o_term.obo_synonym or []
         for synonym in obo_synonyms:
             if isinstance(synonym, dict):
-                logger.info('   Term synonym %s - %s', synonym['name'], synonym_map[synonym['scope']])
+                logger.info('   Term obo synonym %s - %s', synonym['name'], synonym_map[synonym['scope']])
                 db_xref = synonym['xrefs'][0]['database'] + ':' + synonym['xrefs'][0]['id'] \
                     if 'xrefs' in synonym and len(synonym['xrefs']) > 0 else ''
                 m_syno, created = get_one_or_create(Synonym, term=m_term, name=synonym['name'],
@@ -165,6 +164,13 @@ class OlsLoader(object):
                                                         db_xref=db_xref,
                                                         type=synonym_map[synonym['scope']]))
                 n_synonyms += 1 if created else None
+        # OBO Xref are winning against standard synonymz
+        synonyms = o_term.synonyms or []
+        for synonym in synonyms:
+            logger.info('   Term synonym %s - EXACT - No dbXref', synonym)
+            m_syno, created = get_one_or_create(Synonym, term=m_term, name=synonym, type='EXACT')
+            n_synonyms += 1 if created else None
+
         logger.info('   ... Done')
         return n_synonyms
 
@@ -203,11 +209,14 @@ class OlsLoader(object):
         if created:
             logger.info('Create term %s ...', m_term)
             self.load_term_subsets(m_term)
-            for relation in o_term.relations_types:
+            types  = o_term.relations_types + ['parents']
+            relation_types = [rel for rel in types if rel not in ('children')]
+            for relation in relation_types:
                 # updates relation types
-                relation_type, created = get_one_or_create(RelationType, name=relation)
+                relation_type, created = get_one_or_create(RelationType,
+                                                           name=self.__relation_map.get(relation, relation))
                 self.load_term_relations(m_term, relation_type)
-            self._load_term_synonyms(m_term, o_term.obo_synonym)
+            self._load_term_synonyms(m_term, o_term)
             for alt_id in o_term.annotation.has_alternative_id:
                 logger.info('Loaded AltId %s', alt_id)
                 m_term.alt_ids.append(AltId(accession=alt_id))
