@@ -272,7 +272,7 @@ class Relation(Base):
     relation_type = relationship('RelationType')
 
     def __repr__(self):
-        return '<Relatiosddn(relation_id={}, child_term_id={}, parent_term_id={}, relation_type={})>'.format(
+        return '<Relation(relation_id={}, child_term_id={}, parent_term_id={}, relation_type={})>'.format(
             self.relation_id, self.child_term.accession, self.parent_term.accession, self.relation_type.name)
 
 

@@ -29,7 +29,8 @@ def ignore_warnings(test_func):
 
 class TestLoading(unittest.TestCase):
     _multiprocess_shared_ = False
-    db_url = 'sqlite://'
+    # db_url = 'sqlite://'
+    db_url = 'mysql://marc:projet@localhost:3306/ols_ontology?charset=utf8'
 
     def setUp(self):
         super().setUp()
@@ -151,6 +152,15 @@ class TestLoading(unittest.TestCase):
         m_ontology = self.loader.load_ontology('fypo')
         term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0005645')
         o_term = self.client.detail(term)
-        print(o_term)
         m_term = self.loader.load_term(o_term, m_ontology)
-        print(m_term)
+        self.assertIn('λ', m_term.description)
+
+    @ignore_warnings
+    def testSingleTerm(self):
+        m_ontology = self.loader.load_ontology('fypo')
+        term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0000001')
+        o_term = self.client.detail(term)
+        with dal.session_scope() as session:
+            m_term = self.loader.load_term(o_term, m_ontology)
+            session.commit()
+            self.assertGreaterEqual(len(m_term.child_terms), 6)

@@ -21,7 +21,7 @@ class OlsLoader(object):
     }
 
     __relation_map = {
-        'parents': 'is_a',
+        'children': 'is_a',
     }
 
     # TODO check PBQ, FYPO-EXTENSION, FYPO_GO
@@ -94,13 +94,14 @@ class OlsLoader(object):
                 logger.debug('Ontology not found')
         return False
 
-    def load_term_relations(self, m_term, relation_type):
-        rel_name = self.__relation_map.get(relation_type.name, relation_type.name)
-        logger.info('   Loading %s relation %s ...', m_term.accession, rel_name)
+    def load_term_relations(self, m_term, relation_type, rel_name):
+        logger.info('   Loading %s relation %s (%s)...', m_term.accession, rel_name, relation_type.name)
         o_term = helpers.Term(ontology_name=m_term.ontology.name, iri=m_term.iri)
-        o_relatives = o_term.load_relation(relation_type.name)
+        o_relatives = o_term.load_relation(rel_name)
         logger.info('   %s related terms ', len(o_relatives))
         n_relations = 0
+
+
         for o_related in o_relatives:
             if o_related.accession is not None:
                 if o_related.is_defining_ontology:
@@ -128,24 +129,24 @@ class OlsLoader(object):
                                                                    helper=o_related,
                                                                    ontology=r_ontology,
                                                                ))
-                        # FIXME what to do when term listed in onto is not from this onto ?
-                        # m_related = self.load_term(o_related.iri)
                         relation, r_created = get_one_or_create(Relation,
-                                                                parent_term=m_related,
-                                                                child_term=m_term,
+                                                                child_term=m_related,
+                                                                parent_term=m_term,
                                                                 relation_type=relation_type,
                                                                 ontology=m_term.ontology)
-                        n_relations += 1 if r_created else None
-                        logger.info('Loaded relation %s %s %s', m_term.accession, rel_name, m_related.accession)
+                        n_relations += 1 if r_created else 0
+                        logger.info('Loaded relation %s %s %s', m_term.accession, relation_type.name,
+                                    m_related.accession)
             else:
                 logger.warning('This term is not in current ontology, neither defining one %s', o_related)
-        logger.info('   ... Done')
+        logger.info('   ... Done (%s)', n_relations)
         return n_relations
 
-    def _load_term_synonyms(self, m_term: Term, o_term: helpers.Term):
+    def load_term_synonyms(self, m_term: Term, o_term: helpers.Term):
         logger.info('   Loading term synonyms...')
-        session = dal.get_session()
-        session.query(Synonym).filter(Synonym.term_id == m_term.term_id).delete()
+        with dal.session_scope() as session:
+            # session = dal.get_session()
+            session.query(Synonym).filter(Synonym.term == m_term).delete()
         n_synonyms = 0
         synonym_map = {
             'hasExactSynonym': 'EXACT',
@@ -163,13 +164,13 @@ class OlsLoader(object):
                                                     create_method_kwargs=dict(
                                                         db_xref=db_xref,
                                                         type=synonym_map[synonym['scope']]))
-                n_synonyms += 1 if created else None
+                n_synonyms += 1 if created else 0
         # OBO Xref are winning against standard synonymz
         synonyms = o_term.synonyms or []
         for synonym in synonyms:
             logger.info('   Term synonym %s - EXACT - No dbXref', synonym)
             m_syno, created = get_one_or_create(Synonym, term=m_term, name=synonym, type='EXACT')
-            n_synonyms += 1 if created else None
+            n_synonyms += 1 if created else 0
 
         logger.info('   ... Done')
         return n_synonyms
@@ -206,21 +207,32 @@ class OlsLoader(object):
         m_term, created = get_one_or_create(Term, accession=o_term.obo_id,
                                             create_method_kwargs=dict(helper=o_term,
                                                                       ontology=m_ontology))
-        if created:
-            logger.info('Create term %s ...', m_term)
-            self.load_term_subsets(m_term)
-            types  = o_term.relations_types + ['parents']
-            relation_types = [rel for rel in types if rel not in ('children')]
-            for relation in relation_types:
-                # updates relation types
-                relation_type, created = get_one_or_create(RelationType,
-                                                           name=self.__relation_map.get(relation, relation))
-                self.load_term_relations(m_term, relation_type)
-            self._load_term_synonyms(m_term, o_term)
-            for alt_id in o_term.annotation.has_alternative_id:
-                logger.info('Loaded AltId %s', alt_id)
-                m_term.alt_ids.append(AltId(accession=alt_id))
-            logger.info('... Done')
+
+        logger.info('Create term %s ...', m_term)
+        self.load_term_subsets(m_term)
+        types = o_term.relations_types + ['parents']
+        relation_types = [rel for rel in types]
+        with dal.session_scope() as session:
+            # session = dal.get_session()
+            session.query(Relation).filter(Relation.child_term == m_term).delete()
+            session.query(Relation).filter(Relation.parent_term == m_term).delete()
+        for relation in relation_types:
+            # updates relation types
+            relation_type, created = get_one_or_create(RelationType,
+                                                       name=self.__relation_map.get(relation, relation))
+            self.load_term_relations(m_term, relation_type, relation)
+        self.load_term_synonyms(m_term, o_term)
+        self.load_alt_ids(o_term, m_term)
+        logger.info('... Done')
+        return m_term
+
+    def load_alt_ids(self, o_term, m_term):
+        with dal.session_scope() as session:
+            # session = dal.get_session()
+            session.query(AltId).filter(AltId.term == m_term).delete()
+        for alt_id in o_term.annotation.has_alternative_id:
+            logger.info('Loaded AltId %s', alt_id)
+            m_term.alt_ids.append(AltId(accession=alt_id))
         return m_term
 
     def load_term_subsets(self, term: Term):
