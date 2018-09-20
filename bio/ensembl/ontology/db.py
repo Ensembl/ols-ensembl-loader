@@ -68,25 +68,20 @@ def get_one_or_create(model,
     session = dal.get_session()
     try:
         obj = session.query(model).filter_by(**kwargs).one()
-        logger.debug('Existing entity %s: %s', model, kwargs)
+        logger.debug('Exists %s', obj)
         return obj, False
     except NoResultFound:
         try:
-            kwargs.update(create_method_kwargs or {})
-            logger.debug('Not existing %s entity for params %s', model, kwargs)
-            created = getattr(model, create_method, model)(**kwargs)
-            session.add(created)
-            session.flush([created])
+            create_kwargs = create_method_kwargs or {}
+            create_kwargs.update(kwargs)
+            new_obj = getattr(model, create_method, model)(**create_kwargs)
+            session.add(new_obj)
             session.commit()
-            # print('object is get_session', created in get_session)
-            logger.debug('Created: %s', created)
-            return created, True
+            logger.debug('Create %s', new_obj)
+            return new_obj, True
         except IntegrityError:
-            logger.info('Integrity error upon flush')
+            logger.error('Integrity error upon flush')
             session.rollback()
-            if create_method_kwargs is not None:
-                [kwargs.pop(key) for key in create_method_kwargs.keys()]
-            logger.debug('%s', kwargs)
             return session.query(model).filter_by(**kwargs).one(), False
 
 

@@ -1,8 +1,12 @@
 #  -*- coding: utf-8 -*-
 
 import datetime
+import time
 
 import dateutil.parser
+
+from coreapi.exceptions import NetworkError
+from requests.exceptions import ConnectionError
 
 import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.db import *
@@ -24,15 +28,13 @@ class OlsLoader(object):
         'children': 'is_a',
     }
 
-    # TODO check PBQ, FYPO-EXTENSION, FYPO_GO
-    ONTOLOGIES_LIST = ['go', 'so', 'pato', 'hp', 'vt', 'efo', 'po', 'eo', 'to', 'chebi', 'pr', 'fypo', 'peco', 'bfo',
-                       'bto', 'cl', 'cmo', 'eco', 'mp', 'ogms', 'uo']  # PBQ? FROM old script order
-
     _session = None
+    __list_onto = None
 
     _default_options = dict(
         echo=False,
         wipe=False,
+        max_retry=5,
     )
 
     def __init__(self, url, **options):
@@ -40,10 +42,17 @@ class OlsLoader(object):
         self.options = self._default_options
         self.options.update(options)
         self.client = OlsClient()
+        self.retry = 0
         dal.db_init(self.db_url, **self.options)
 
-    def db_init(self):
-        dal.db_init(self.db_url, **self.options)
+    @property
+    def allowed_ontologies(self):
+        if self.__list_onto is None:
+            from os.path import dirname, join
+            with open(join(dirname(__file__), 'ontologies.ini')) as f:
+                content = f.readlines()
+            self.__list_onto = [x.strip() for x in content]
+        return self.__list_onto
 
     def init_meta(self):
         metas = {
@@ -54,30 +63,68 @@ class OlsLoader(object):
             get_one_or_create(Meta, meta_key=meta_key,
                               create_method_kwargs=dict(meta_value=meta_value))
 
-    @property
-    def session(self):
-        return dal.get_session()
-
     def load(self, ontology_name):
-        # run process for all defaults ontologies setup
-        for ontology in self.ONTOLOGIES_LIST:
-            m_ontology = self.load_ontology(ontology)
+        with dal.session_scope() as session:
+            if self.options.get('wipe', False):
+                logger.info('Removing ontology %s', ontology_name)
+                self.wipe_ontology(ontology_name)
+                metas = session.query(Meta).filter(Meta.meta_key.like("%" + ontology_name + "%")).all()
+                for meta in metas:
+                    meta.delete()
+            else:
+                logger.info('Updating ontology %s', ontology_name)
+            start = datetime.datetime.now()
+            meta, created = get_one_or_create(Meta, meta_key=ontology_name + '_load_date',
+                                              create_method_kwargs=dict(meta_value=start.strftime('%c')))
+            if not created:
+                meta.meta_value = start.strftime('%c')
+            m_ontology = self.load_ontology(ontology_name)
             self.load_ontology_terms(m_ontology)
+            ended = datetime.datetime.now()
+            meta_time, created = get_one_or_create(Meta, meta_key=ontology_name + '_load_time',
+                                                   create_method_kwargs=dict(
+                                                       meta_value=(ended - start).total_seconds()))
+            if not created:
+                logger.debug('Updating meta_load_time to %s', (ended - start).total_seconds())
+                meta_time.meta_value = (ended - start).total_seconds()
+            return m_ontology
+
+    def __call_client(self, method, *args):
+        """
+        Try 'max_retry' time to contact OLS api via its client, reraise error when limit reached.
+        :param method: client method to call
+        :param args:  client methods args
+        :return: client response
+        """
+        retry = 0
+        max_retry = self.options.get('max_retry')
+        while retry < max_retry:
+            try:
+                logger.debug('Calling client.%s%s', method, args)
+                return self.client.__getattribute__(method)(*args)
+            except (ConnectionError, NetworkError) as e:
+                logger.error('Network error %s for %s%s', e, method, args)
+                # wait 5 seconds until next OLS api client try
+                time.sleep(5)
+                retry += 1
+                if retry == max_retry:
+                    logger.fatal('Max API retry for %s%s', method, args)
+                    raise e
 
     def load_ontology(self, ontology_name, namespace=None):
-        if self.options.get('wipe', False):
-            logger.debug('Removing ontology %s', ontology_name)
-            self.wipe_ontology(ontology_name)
-        o_ontology = self.client.ontology(ontology_name)
-        get_one_or_create(Meta, meta_key=ontology_name + '_file_date',
-                          create_method_kwargs=dict(
-                              meta_value=dateutil.parser.parse(o_ontology.updated).strftime('%c')))
-        get_one_or_create(Meta, meta_key=ontology_name + '_load_date',
-                          create_method_kwargs=dict(meta_value=datetime.datetime.now().strftime('%c')))
+        o_ontology = self.__call_client('ontology', ontology_name)
+        # o_ontology = self.client.ontology(ontology_name)
+        meta, created = get_one_or_create(Meta, meta_key=ontology_name + '_file_date',
+                                          create_method_kwargs=dict(
+                                              meta_value=dateutil.parser.parse(o_ontology.updated).strftime('%c')))
 
+        if not created:
+            meta.meta_value = dateutil.parser.parse(o_ontology.updated).strftime('%c')
         m_ontology, created = get_one_or_create(Ontology, name=o_ontology.ontology_id,
                                                 namespace=namespace or o_ontology.namespace,
                                                 create_method_kwargs={'helper': o_ontology})
+        if not created:
+            m_ontology.version = o_ontology.version
         logger.info('Loaded ontology %s', m_ontology)
         return m_ontology
 
@@ -101,7 +148,6 @@ class OlsLoader(object):
         logger.info('   %s related terms ', len(o_relatives))
         n_relations = 0
 
-
         for o_related in o_relatives:
             if o_related.accession is not None:
                 if o_related.is_defining_ontology:
@@ -111,7 +157,7 @@ class OlsLoader(object):
                         logger.info('   The term %s does not belong to current ontology %s', o_related.accession,
                                     m_term.ontology.name)
                         ro_term = self.client.term(identifier=o_related.iri, unique=True)
-                        if ro_term is not None and ro_term.ontology_name in self.ONTOLOGIES_LIST:
+                        if ro_term is not None and ro_term.ontology_name in self.allowed_ontologies:
                             logger.debug('  Term is defined in another expected ontology: %s', ro_term.ontology_name)
                             # load ontology
                             o_onto_details = self.client.ontology(ro_term.ontology_name)
@@ -145,7 +191,6 @@ class OlsLoader(object):
     def load_term_synonyms(self, m_term: Term, o_term: helpers.Term):
         logger.info('   Loading term synonyms...')
         with dal.session_scope() as session:
-            # session = dal.get_session()
             session.query(Synonym).filter(Synonym.term == m_term).delete()
         n_synonyms = 0
         synonym_map = {
@@ -176,7 +221,6 @@ class OlsLoader(object):
         return n_synonyms
 
     def load_ontology_terms(self, ontology):
-        # todo delete current terms ?
         nb_terms = 0
         if type(ontology) is str:
             m_ontology = self.load_ontology(ontology)
@@ -228,7 +272,6 @@ class OlsLoader(object):
 
     def load_alt_ids(self, o_term, m_term):
         with dal.session_scope() as session:
-            # session = dal.get_session()
             session.query(AltId).filter(AltId.term == m_term).delete()
         for alt_id in o_term.annotation.has_alternative_id:
             logger.info('Loaded AltId %s', alt_id)

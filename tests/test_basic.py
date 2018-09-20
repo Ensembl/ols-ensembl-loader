@@ -34,6 +34,7 @@ class TestLoading(unittest.TestCase):
 
     def setUp(self):
         super().setUp()
+        dal.wipe_schema(self.db_url)
         self.loader = OlsLoader(self.db_url)
         self.client = OlsClient()
 
@@ -69,8 +70,8 @@ class TestLoading(unittest.TestCase):
             session.add(Term(ontology=m_ontology, accession='CCC_00000{}'.format(i), name='Term {}'.format(i),
                              is_root=False, is_obsolete=False))
 
-        session.commit()
-        self.assertEqual(session.query(Term).count(), 5)
+        session.flush()
+        self.assertEqual(5, session.query(Term).count())
 
         self.assertTrue(created)
         ontologies = session.query(Ontology).filter_by(name=ontology_name)
@@ -81,28 +82,36 @@ class TestLoading(unittest.TestCase):
         self.assertEqual(len(ontologies.all()), 0)
         # test cascade
         self.assertEqual(session.query(Term).count(), 0)
-        with dal.session_scope() as session:
-            meta_file_date = session.query(Meta).filter_by(meta_key=ontology_name + '_file_date').one()
-            meta_load_date = session.query(Meta).filter_by(meta_key=ontology_name + '_load_date').one()
-            logger.debug('meta load date: %s', meta_load_date)
-            logger.debug('meta file date: %s', meta_file_date)
-            try:
-                datetime.datetime.strptime(meta_file_date.meta_value, "%c")
-                datetime.datetime.strptime(meta_load_date.meta_value, "%c")
-            except ValueError:
-                self.fail('Wrong date format')
 
     @ignore_warnings
     def testLoadOntologyTerms(self):
         session = dal.get_session()
-        ontology_name = 'fypo'
-        m_ontology = self.loader.load_ontology(ontology_name)
-        expected = self.loader.load_ontology_terms(m_ontology)
+        ontology_name = 'cio'
+        expected = self.loader.load_ontology_terms(ontology_name)
         logger.info('Expected terms %s', expected)
         s_terms = session.query(Term).filter(Ontology.name == ontology_name)
-        inserted = s_terms.all()
-        logger.info('Inserted terms %s', len(inserted))
-        self.assertEqual(expected, len(inserted))
+        inserted = s_terms.count()
+        logger.info('Inserted terms %s', inserted)
+        self.assertEqual(expected, inserted)
+
+    @ignore_warnings
+    def testLoadTimeMeta(self):
+        ontology_name = 'bfo'
+        self.loader.options['wipe'] = False
+        m_ontology = self.loader.load('bfo')
+        with dal.session_scope() as session:
+            meta_file_date = session.query(Meta).filter_by(meta_key=ontology_name + '_file_date').one()
+            meta_time = session.query(Meta).filter_by(meta_key=ontology_name + '_load_time').one()
+            meta_start = session.query(Meta).filter_by(meta_key=ontology_name + '_load_date').one()
+            self.assertTrue(float(meta_time.meta_value) > 0)
+            self.assertTrue(datetime.datetime.strptime(meta_start.meta_value, "%c") < datetime.datetime.now())
+            logger.debug('meta load date: %s', meta_start)
+            logger.debug('meta file date: %s', meta_file_date)
+            try:
+                datetime.datetime.strptime(meta_file_date.meta_value, "%c")
+                datetime.datetime.strptime(meta_start.meta_value, "%c")
+            except ValueError:
+                self.fail('Wrong date format')
 
     @ignore_warnings
     def testCascadeDelete(self):
@@ -164,3 +173,8 @@ class TestLoading(unittest.TestCase):
             m_term = self.loader.load_term(o_term, m_ontology)
             session.commit()
             self.assertGreaterEqual(len(m_term.child_terms), 6)
+
+    @ignore_warnings
+    def testOntologiesList(self):
+        self.assertIsInstance(self.loader.allowed_ontologies, list)
+        self.assertIn('go', self.loader.allowed_ontologies)

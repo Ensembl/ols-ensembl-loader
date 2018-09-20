@@ -18,8 +18,9 @@ SQLAlchemy database models for OLS ontologies loading
 __all__ = ['Ontology', 'Meta', 'Term', 'Subset', 'RelationType', 'Closure', 'Relation', 'AltId', 'Synonym',
            'SynonymTypeEnum']
 
-long_string = String(1000)
-long_string = long_string.with_variant(String(1000, collation='utf8_general_ci'), 'mysql')
+long_string = String(5000)
+long_string = long_string.with_variant(String(5000, collation='utf8_general_ci'), 'mysql')
+
 
 class SynonymTypeEnum(enum.Enum):
     EXACT = 'EXACT'
@@ -35,7 +36,6 @@ class LoadAble(object):
     _load_map = dict()
 
     def __init__(self, helper=None, **kwargs) -> None:
-        # print('in it 1', helper, isinstance(helper, helpers.OLSHelper))
         if helper and isinstance(helper, helpers.OLSHelper):
             constructor_args = {key: getattr(helper, self._load_map.get(key, key), None) for key in dir(self)}
             # logger.debug('helper %s args: %s', helper.__class__, constructor_args)
@@ -51,6 +51,9 @@ class LoadAble(object):
         attributes = {name: getattr(self, name) for name in dir(self) if
                       isinstance(getattr(self, name), (type(None), str, int, float, bool))}
         return '<{}({})>'.format(class_name, attributes)
+
+    def update(self, helper):
+        [self.__setattr__(key, getattr(helper, self._load_map.get(key, key), None)) for key in dir(self)]
 
 
 class Meta(Base):
