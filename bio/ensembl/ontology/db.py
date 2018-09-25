@@ -1,4 +1,17 @@
 # -*- coding: utf-8 -*-
+"""
+.. See the NOTICE file distributed with this work for additional information
+   regarding copyright ownership.
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+       http://www.apache.org/licenses/LICENSE-2.0
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
 import contextlib
 import logging
 
@@ -26,7 +39,9 @@ class DataAccessLayer:
 
         self.engine = sqlalchemy.create_engine(conn_string,
                                                pool_recycle=options.get('timeout', 36000),
-                                               echo=False, encoding='utf8', convert_unicode=True)
+                                               echo=options.get('echo', False),
+                                               encoding='utf8',
+                                               convert_unicode=True)
         self.options = options or {}
         self.metadata.create_all(self.engine)
         self.connection = self.engine.connect()
@@ -37,16 +52,17 @@ class DataAccessLayer:
 
     def get_session(self):
         if not self.session or not self.session.is_active:
+            print('create a new session')
             self.session = Session(bind=self.engine, autoflush=self.options.get('autoflush', False),
                                    autocommit=self.options.get('autocommit', False))
-        return self.session
+        return Session(bind=self.engine, autoflush=self.options.get('autoflush', False),
+                                   autocommit=self.options.get('autocommit', False))
 
     @contextlib.contextmanager
     def session_scope(self):
         """Provide a transactional scope around a series of operations."""
         # get_session = Session(bind=self.engine)
-        session = Session(bind=self.engine, autoflush=self.options.get('autoflush', False),
-                          autocommit=self.options.get('autocommit', False))
+        session = Session(bind=self.engine, autoflush=self.options.get('autoflush', False), autocommit=self.options.get('autocommit', False))
         logger.debug('Open session')
         try:
             yield session
@@ -69,6 +85,12 @@ def get_one_or_create(model,
     try:
         obj = session.query(model).filter_by(**kwargs).one()
         logger.debug('Exists %s', obj)
+        if 'helper' in create_method_kwargs:
+            obj.update_from_helper(helper=create_method_kwargs.get('helper'))
+        else:
+            [setattr(obj, attribute, create_method_kwargs.get(attribute)) for attribute in create_method_kwargs]
+        logger.debug('Updated %s', obj)
+        # session.add(obj)
         return obj, False
     except NoResultFound:
         try:

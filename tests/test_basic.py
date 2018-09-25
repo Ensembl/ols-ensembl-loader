@@ -1,4 +1,17 @@
 # -*- coding: utf-8 -*-
+"""
+.. See the NOTICE file distributed with this work for additional information
+   regarding copyright ownership.
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+       http://www.apache.org/licenses/LICENSE-2.0
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
 import datetime
 import unittest
 import warnings
@@ -29,13 +42,13 @@ def ignore_warnings(test_func):
 
 class TestLoading(unittest.TestCase):
     _multiprocess_shared_ = False
-    # db_url = 'sqlite://'
+    #db_url = 'sqlite://'
     db_url = 'mysql://marc:projet@localhost:3306/ols_ontology?charset=utf8'
 
     def setUp(self):
         super().setUp()
         dal.wipe_schema(self.db_url)
-        self.loader = OlsLoader(self.db_url)
+        self.loader = OlsLoader(self.db_url, echo=True)
         self.client = OlsClient()
 
     @ignore_warnings
@@ -52,36 +65,38 @@ class TestLoading(unittest.TestCase):
     def testLoadOntology(self):
         # test retrieve
         # test try to create duplicated
-        session = dal.get_session()
         ontology_name = 'cvdo'
+        session = dal.get_session()
         m_ontology = self.loader.load_ontology(ontology_name)
         logger.info('Loaded ontology %s', m_ontology)
-        r_ontology = session.query(Ontology).filter_by(name=ontology_name,
+
+        with dal.session_scope() as session: # = dal.get_session()
+            r_ontology = session.query(Ontology).filter_by(name=ontology_name,
                                                        namespace=m_ontology.namespace).one()
-        logger.info('(RE) Loaded ontology %s', r_ontology)
-        self.assertEqual(m_ontology.name, r_ontology.name)
-        self.assertEqual(m_ontology.version, r_ontology.version)
-        assert isinstance(r_ontology, Ontology)
-        # automatically create another one with another namespace
-        new_ontology, created = get_one_or_create(Ontology,
-                                                  name=r_ontology.name,
-                                                  namespace='another_namespace')
-        for i in range(0, 5):
-            session.add(Term(ontology=m_ontology, accession='CCC_00000{}'.format(i), name='Term {}'.format(i),
-                             is_root=False, is_obsolete=False))
+            logger.info('(RE) Loaded ontology %s', r_ontology)
+            self.assertEqual(m_ontology.name, r_ontology.name)
+            self.assertEqual(m_ontology.version, r_ontology.version)
+            assert isinstance(r_ontology, Ontology)
+            # automatically create another one with another namespace
+            new_ontology, created = get_one_or_create(Ontology,
+                                                      name=r_ontology.name,
+                                                      namespace='another_namespace')
 
-        session.flush()
+            for i in range(0, 5):
+                session.add(Term(ontology=m_ontology,
+                                 accession='CCC_00000{}'.format(i),
+                                 name='Term {}'.format(i),
+                                 is_root=False, is_obsolete=False))
+
+        session = dal.get_session()
         self.assertEqual(5, session.query(Term).count())
-
         self.assertTrue(created)
         ontologies = session.query(Ontology).filter_by(name=ontology_name)
         self.assertEqual(len(ontologies.all()), 2)
         self.assertTrue(new_ontology.name == r_ontology.name)
         self.loader.wipe_ontology(ontology_name=ontology_name)
-        ontologies = session.query(Ontology).filter_by(name=ontology_name)
-        self.assertEqual(len(ontologies.all()), 0)
-        # test cascade
-        self.assertEqual(session.query(Term).count(), 0)
+        ontologies = session.query(Ontology).filter_by(name=ontology_name).count()
+        self.assertEqual(ontologies, 0)
 
     @ignore_warnings
     def testLoadOntologyTerms(self):

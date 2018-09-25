@@ -1,10 +1,21 @@
 #  -*- coding: utf-8 -*-
-
+"""
+.. See the NOTICE file distributed with this work for additional information
+   regarding copyright ownership.
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+       http://www.apache.org/licenses/LICENSE-2.0
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
 import datetime
-import time
 
 import dateutil.parser
-
+import time
 from coreapi.exceptions import NetworkError
 from requests.exceptions import ConnectionError
 
@@ -89,7 +100,7 @@ class OlsLoader(object):
                 meta_time.meta_value = (ended - start).total_seconds()
             return m_ontology
 
-    def __call_client(self, method, *args):
+    def __call_client(self, method, *args, **kwargs):
         """
         Try 'max_retry' time to contact OLS api via its client, reraise error when limit reached.
         :param method: client method to call
@@ -100,31 +111,29 @@ class OlsLoader(object):
         max_retry = self.options.get('max_retry')
         while retry < max_retry:
             try:
-                logger.debug('Calling client.%s%s', method, args)
-                return self.client.__getattribute__(method)(*args)
+                logger.debug('Calling client.%s(%s)(%s)', method, args, kwargs)
+                return self.client.__getattribute__(method)(*args, **kwargs)
             except (ConnectionError, NetworkError) as e:
-                logger.error('Network error %s for %s%s', e, method, args)
+                logger.error('Network error %s for %s(%s)(%s)', e, method, args, kwargs)
                 # wait 5 seconds until next OLS api client try
                 time.sleep(5)
                 retry += 1
                 if retry == max_retry:
-                    logger.fatal('Max API retry for %s%s', method, args)
+                    logger.fatal('Max API retry for %s(%s)(%s)', method, args, kwargs)
                     raise e
 
     def load_ontology(self, ontology_name, namespace=None):
         o_ontology = self.__call_client('ontology', ontology_name)
-        # o_ontology = self.client.ontology(ontology_name)
         meta, created = get_one_or_create(Meta, meta_key=ontology_name + '_file_date',
                                           create_method_kwargs=dict(
-                                              meta_value=dateutil.parser.parse(o_ontology.updated).strftime('%c')))
+                                              meta_value=ontology_name.upper() + '/' + dateutil.parser.parse(
+                                                  o_ontology.updated).strftime('%c')))
 
         if not created:
             meta.meta_value = dateutil.parser.parse(o_ontology.updated).strftime('%c')
         m_ontology, created = get_one_or_create(Ontology, name=o_ontology.ontology_id,
                                                 namespace=namespace or o_ontology.namespace,
                                                 create_method_kwargs={'helper': o_ontology})
-        if not created:
-            m_ontology.version = o_ontology.version
         logger.info('Loaded ontology %s', m_ontology)
         return m_ontology
 
@@ -133,8 +142,9 @@ class OlsLoader(object):
         with dal.session_scope() as session:
             try:
                 logger.debug('Delete ontology %s', ontology_name)
-                ontologies = session.query(Ontology).filter_by(name=ontology_name)
+                ontologies = session.query(Ontology).filter_by(name=ontology_name).all()
                 for ontology in ontologies:
+                    logger.debug('Deleting ontology %s', ontology)
                     session.delete(ontology)
                 return True
             except NoResultFound:
@@ -156,11 +166,12 @@ class OlsLoader(object):
                     else:
                         logger.info('   The term %s does not belong to current ontology %s', o_related.accession,
                                     m_term.ontology.name)
-                        ro_term = self.client.term(identifier=o_related.iri, unique=True)
+                        # ro_term = self.client.term(identifier=o_related.iri, unique=True)
+                        ro_term = self.__call_client('term', identifier=o_related.iri, unique=True)
                         if ro_term is not None and ro_term.ontology_name in self.allowed_ontologies:
                             logger.debug('  Term is defined in another expected ontology: %s', ro_term.ontology_name)
                             # load ontology
-                            o_onto_details = self.client.ontology(ro_term.ontology_name)
+                            o_onto_details = self.__call_client('ontology', ro_term.ontology_name)
                             r_ontology, created = get_one_or_create(Ontology, name=o_onto_details.ontology_id,
                                                                     namespace=ro_term.obo_name_space,
                                                                     create_method_kwargs=dict(
@@ -224,10 +235,10 @@ class OlsLoader(object):
         nb_terms = 0
         if type(ontology) is str:
             m_ontology = self.load_ontology(ontology)
-            terms = self.client.ontology(ontology).terms()
+            terms = self.__call_client('ontology', ontology).terms()
         elif isinstance(ontology, Ontology):
             m_ontology = ontology
-            terms = self.client.ontology(ontology.name).terms()
+            terms = self.__call_client('ontology', ontology.name).terms()
         elif isinstance(ontology, helpers.Ontology):
             m_ontology = Ontology(helper=ontology)
             terms = ontology.terms()
@@ -279,18 +290,21 @@ class OlsLoader(object):
         return m_term
 
     def load_term_subsets(self, term: Term):
-        subsets = 0
-        logger.info('   Loading term subsets')
-        for subset_name in term.subsets.split(','):
-            logger.debug('      Processing subset %s', subset_name)
-            search = self.client.search(query=subset_name, filters={'ontology': term.ontology.name,
-                                                                    'type': 'property'})
-            if len(search) == 1:
-                details = self.client.detail(search[0])
-                subset, created = get_one_or_create(Subset, name=subset_name,
-                                                    definition=details.definition or '')
-                if created:
-                    logger.info('      Created subset [%s: %s]', subset.subset_id, subset_name)
-                    subsets += 1
-        logger.info('   ... Done')
+        subsets = []
+        if term.subsets:
+            logger.info('   Loading term subsets: %s', term.subsets)
+            subset_names = term.subsets.split(',')
+            for subset_name in subset_names:
+                logger.debug('      Processing subset %s', subset_name)
+                # search = self.client.search(query=subset_name, filters={'ontology': term.ontology.name, 'type': 'property'})
+                search = self.__call_client('search', query=subset_name, filters={'ontology': term.ontology.name,
+                                                                              'type': 'property'})
+                if len(search) == 1:
+                    details = self.__call_client('detail', search[0])
+                    subset, created = get_one_or_create(Subset, name=subset_name,
+                                                        definition=details.definition or '')
+                    if created:
+                        logger.info('      Created subset [%s: %s]', subset.subset_id, subset_name)
+                        subsets += subset
+            logger.info('   ... Done')
         return subsets

@@ -1,4 +1,17 @@
 # -*- coding: utf-8 -*-
+"""
+.. See the NOTICE file distributed with this work for additional information
+   regarding copyright ownership.
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+       http://www.apache.org/licenses/LICENSE-2.0
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
 import enum
 import logging
 
@@ -52,7 +65,7 @@ class LoadAble(object):
                       isinstance(getattr(self, name), (type(None), str, int, float, bool))}
         return '<{}({})>'.format(class_name, attributes)
 
-    def update(self, helper):
+    def update_from_helper(self, helper):
         [self.__setattr__(key, getattr(helper, self._load_map.get(key, key), None)) for key in dir(self)]
 
 
