@@ -49,5 +49,5 @@ if __name__ == "__main__":
     loader.wipe_ontology(ontology_name=arguments.ontology)
     logger.info('...Done')
     logger.info('Loading ontology %s', arguments.ontology)
-    loader.load(arguments.ontology)
+    loader.load_all(arguments.ontology)
     logger.info('...Done')

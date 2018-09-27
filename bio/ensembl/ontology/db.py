@@ -36,7 +36,6 @@ class DataAccessLayer:
     session = None
 
     def db_init(self, conn_string, **options):
-
         self.engine = sqlalchemy.create_engine(conn_string,
                                                pool_recycle=options.get('timeout', 36000),
                                                echo=options.get('echo', False),
@@ -45,66 +44,64 @@ class DataAccessLayer:
         self.options = options or {}
         self.metadata.create_all(self.engine)
         self.connection = self.engine.connect()
+        return self.connection
 
     def wipe_schema(self, conn_string):
         engine = sqlalchemy.create_engine(conn_string, echo=False)
         Base.metadata.drop_all(engine)
 
     def get_session(self):
-        if not self.session or not self.session.is_active:
-            print('create a new session')
-            self.session = Session(bind=self.engine, autoflush=self.options.get('autoflush', False),
-                                   autocommit=self.options.get('autocommit', False))
+        print()
         return Session(bind=self.engine, autoflush=self.options.get('autoflush', False),
-                                   autocommit=self.options.get('autocommit', False))
+                       autocommit=self.options.get('autocommit', False))
 
     @contextlib.contextmanager
     def session_scope(self):
         """Provide a transactional scope around a series of operations."""
-        # get_session = Session(bind=self.engine)
-        session = Session(bind=self.engine, autoflush=self.options.get('autoflush', False), autocommit=self.options.get('autocommit', False))
+        session = self.get_session()
         logger.debug('Open session')
         try:
             yield session
-            logger.debug('Commit session')
             session.commit()
+            logger.debug('Commit session')
         except Exception as e:
-            logger.exception('Error in session %s', e)
             session.rollback()
+            logger.exception('Error in session %s', e)
             raise
         finally:
-            logger.debug('Closing session')
             session.close()
+            logger.debug('Closing session')
 
 
 def get_one_or_create(model,
+                      session=None,
                       create_method='',
                       create_method_kwargs=None,
                       **kwargs):
-    session = dal.get_session()
+    c_session = session or dal.get_session()
+    create_kwargs = create_method_kwargs or {}
     try:
-        obj = session.query(model).filter_by(**kwargs).one()
+        obj = c_session.query(model).filter_by(**kwargs).one()
         logger.debug('Exists %s', obj)
-        if 'helper' in create_method_kwargs:
-            obj.update_from_helper(helper=create_method_kwargs.get('helper'))
+        if 'helper' in create_kwargs:
+            obj.update_from_helper(helper=create_kwargs.get('helper'))
         else:
-            [setattr(obj, attribute, create_method_kwargs.get(attribute)) for attribute in create_method_kwargs]
+            [setattr(obj, attribute, create_kwargs.get(attribute)) for attribute in create_kwargs if
+             attribute is not None]
         logger.debug('Updated %s', obj)
-        # session.add(obj)
         return obj, False
     except NoResultFound:
         try:
-            create_kwargs = create_method_kwargs or {}
             create_kwargs.update(kwargs)
             new_obj = getattr(model, create_method, model)(**create_kwargs)
-            session.add(new_obj)
-            session.commit()
+            c_session.add(new_obj)
+            c_session.commit()
             logger.debug('Create %s', new_obj)
             return new_obj, True
         except IntegrityError:
             logger.error('Integrity error upon flush')
-            session.rollback()
-            return session.query(model).filter_by(**kwargs).one(), False
+            c_session.rollback()
+            return c_session.query(model).filter_by(**kwargs).one(), False
 
 
 dal = DataAccessLayer()

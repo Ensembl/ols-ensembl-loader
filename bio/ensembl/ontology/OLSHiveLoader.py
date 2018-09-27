@@ -13,7 +13,6 @@
    limitations under the License.
 """
 # @author Marc Chakiachvili
-
 import logging
 from os.path import join
 from urllib import parse
@@ -24,7 +23,6 @@ from loader import OlsLoader
 
 
 class OLSHiveLoader(eHive.BaseRunnable):
-
     """ OLS MySQL loader runnable class for eHive integration """
     db_base_name = 'ensembl_ontology'
     log_levels = [
@@ -50,10 +48,6 @@ class OLSHiveLoader(eHive.BaseRunnable):
         if self.param_required('drop_before') is False:
             options['wipe'] = False
 
-        self.ols_loader = OlsLoader(self.param_required('db_url'), **options)
-
-        assert self.param_required('ontology_name') in self.ols_loader.allowed_ontologies
-        # TODO Check db exists
         db_url_parts = parse.urlparse(self.param_required('db_url'))
         assert db_url_parts.scheme in ('mysql')
         assert db_url_parts.path != ''
@@ -61,20 +55,22 @@ class OLSHiveLoader(eHive.BaseRunnable):
             assert db_url_parts.port != ''
             assert db_url_parts.username != ''
             assert db_url_parts.password != ''
+
         logging.basicConfig(level=self.log_levels[self.param('verbosity')],
                             format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
                             datefmt='%m-%d %H:%M - %s',
                             filename=join(self.param_required('output_dir'),
                                           self.log_file % self.param_required('ontology_name')),
                             filemode='w')
+        self.ols_loader = OlsLoader(self.param_required('db_url'), **options)
+        self.ols_loader.init_db()
+        assert self.param_required('ontology_name') in self.ols_loader.allowed_ontologies
 
     def run(self):
         # False => erreur marque le job en failed, i.e pas de retry
         self.input_job.transient_error = False
         # TODO add default options
-        self.ols_loader.init_meta()
-        self.ols_loader.load(self.param_required('ontology_name'))
+        self.ols_loader.load_all(self.param_required('ontology_name'))
 
     def write_output(self):
         pass
-

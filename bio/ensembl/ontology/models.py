@@ -47,8 +47,9 @@ Base = declarative_base()
 
 class LoadAble(object):
     _load_map = dict()
+    __table_args__ = {'mysql_engine': 'MyISAM'}
 
-    def __init__(self, helper=None, **kwargs) -> None:
+    def __init__(self, helper=None, **kwargs):
         if helper and isinstance(helper, helpers.OLSHelper):
             constructor_args = {key: getattr(helper, self._load_map.get(key, key), None) for key in dir(self)}
             # logger.debug('helper %s args: %s', helper.__class__, constructor_args)
@@ -66,7 +67,8 @@ class LoadAble(object):
         return '<{}({})>'.format(class_name, attributes)
 
     def update_from_helper(self, helper):
-        [self.__setattr__(key, getattr(helper, self._load_map.get(key, key), None)) for key in dir(self)]
+        [self.__setattr__(key, getattr(helper, self._load_map.get(key, key), None)) for key in dir(self) if
+         getattr(helper, self._load_map.get(key, key), None) is not None]
 
 
 class Meta(Base):

@@ -42,37 +42,29 @@ def ignore_warnings(test_func):
 
 class TestLoading(unittest.TestCase):
     _multiprocess_shared_ = False
-    #db_url = 'sqlite://'
+    # db_url = 'sqlite://'
     db_url = 'mysql://marc:projet@localhost:3306/ols_ontology?charset=utf8'
 
     def setUp(self):
-        super().setUp()
-        dal.wipe_schema(self.db_url)
-        self.loader = OlsLoader(self.db_url, echo=True)
+        self.loader = OlsLoader(self.db_url)
+        self.loader.init_db()
         self.client = OlsClient()
 
-    @ignore_warnings
-    def testInitDb(self):
-        for table_name in ['meta', 'ontology', 'relation_type', 'subset', 'term', 'alt_id', 'closure', 'relation',
-                           'synonym']:
-            self.assertIn(table_name, Base.metadata.tables)
-
-        with dal.session_scope() as session:
-            for meta_info in Base.__subclasses__():
-                self.assertIsNotNone(session.query(meta_info).all())
+    def tearDown(self):
+        dal.wipe_schema(self.db_url)
 
     @ignore_warnings
     def testLoadOntology(self):
         # test retrieve
         # test try to create duplicated
         ontology_name = 'cvdo'
-        session = dal.get_session()
         m_ontology = self.loader.load_ontology(ontology_name)
         logger.info('Loaded ontology %s', m_ontology)
 
-        with dal.session_scope() as session: # = dal.get_session()
+        with dal.session_scope() as session:
+
             r_ontology = session.query(Ontology).filter_by(name=ontology_name,
-                                                       namespace=m_ontology.namespace).one()
+                                                           namespace=m_ontology.namespace).one()
             logger.info('(RE) Loaded ontology %s', r_ontology)
             self.assertEqual(m_ontology.name, r_ontology.name)
             self.assertEqual(m_ontology.version, r_ontology.version)
@@ -82,19 +74,21 @@ class TestLoading(unittest.TestCase):
                                                       name=r_ontology.name,
                                                       namespace='another_namespace')
 
+            self.assertTrue(created)
             for i in range(0, 5):
-                session.add(Term(ontology=m_ontology,
-                                 accession='CCC_00000{}'.format(i),
+                session.add(Term(accession='CCC_00000{}'.format(i),
                                  name='Term {}'.format(i),
-                                 is_root=False, is_obsolete=False))
+                                 ontology=r_ontology,
+                                 is_root=False,
+                                 is_obsolete=False))
+            self.assertTrue(new_ontology.name == r_ontology.name)
 
         session = dal.get_session()
         self.assertEqual(5, session.query(Term).count())
-        self.assertTrue(created)
         ontologies = session.query(Ontology).filter_by(name=ontology_name)
-        self.assertEqual(len(ontologies.all()), 2)
-        self.assertTrue(new_ontology.name == r_ontology.name)
-        self.loader.wipe_ontology(ontology_name=ontology_name)
+        self.assertEqual(ontologies.count(), 2)
+        session = dal.get_session()
+        self.loader.wipe_ontology(ontology_name=ontology_name, session=session)
         ontologies = session.query(Ontology).filter_by(name=ontology_name).count()
         self.assertEqual(ontologies, 0)
 
@@ -102,7 +96,7 @@ class TestLoading(unittest.TestCase):
     def testLoadOntologyTerms(self):
         session = dal.get_session()
         ontology_name = 'cio'
-        expected = self.loader.load_ontology_terms(ontology_name)
+        expected = self.loader.load_ontology_terms(ontology_name, session)
         logger.info('Expected terms %s', expected)
         s_terms = session.query(Term).filter(Ontology.name == ontology_name)
         inserted = s_terms.count()
@@ -113,20 +107,21 @@ class TestLoading(unittest.TestCase):
     def testLoadTimeMeta(self):
         ontology_name = 'bfo'
         self.loader.options['wipe'] = False
-        m_ontology = self.loader.load('bfo')
-        with dal.session_scope() as session:
-            meta_file_date = session.query(Meta).filter_by(meta_key=ontology_name + '_file_date').one()
-            meta_time = session.query(Meta).filter_by(meta_key=ontology_name + '_load_time').one()
-            meta_start = session.query(Meta).filter_by(meta_key=ontology_name + '_load_date').one()
-            self.assertTrue(float(meta_time.meta_value) > 0)
-            self.assertTrue(datetime.datetime.strptime(meta_start.meta_value, "%c") < datetime.datetime.now())
-            logger.debug('meta load date: %s', meta_start)
-            logger.debug('meta file date: %s', meta_file_date)
-            try:
-                datetime.datetime.strptime(meta_file_date.meta_value, "%c")
-                datetime.datetime.strptime(meta_start.meta_value, "%c")
-            except ValueError:
-                self.fail('Wrong date format')
+        m_ontology = self.loader.load_all('bfo')
+        self.assertTrue(m_ontology)
+        session = dal.get_session()
+        meta_file_date = session.query(Meta).filter_by(meta_key=ontology_name + '_file_date').one()
+        meta_time = session.query(Meta).filter_by(meta_key=ontology_name + '_load_time').one()
+        meta_start = session.query(Meta).filter_by(meta_key=ontology_name + '_load_date').one()
+        self.assertTrue(float(meta_time.meta_value) > 0)
+        self.assertTrue(datetime.datetime.strptime(meta_start.meta_value, "BFO/%c") < datetime.datetime.now())
+        logger.debug('meta load_all date: %s', meta_start)
+        logger.debug('meta file date: %s', meta_file_date)
+        try:
+            datetime.datetime.strptime(meta_file_date.meta_value, "BFO/%c")
+            datetime.datetime.strptime(meta_start.meta_value, "BFO/%c")
+        except ValueError:
+            self.fail('Wrong date format')
 
     @ignore_warnings
     def testCascadeDelete(self):
@@ -156,8 +151,7 @@ class TestLoading(unittest.TestCase):
                 session.add_all([closure_1, closure_2, closure_3])
 
         with dal.session_scope() as session:
-            self.loader.wipe_ontology('GO')
-            session.flush()
+            self.loader.wipe_ontology('GO', session)
             self.assertEqual(session.query(Term).count(), 4)
             self.assertEqual(session.query(Synonym).count(), 0)
             self.assertEqual(session.query(AltId).count(), 0)
@@ -166,30 +160,44 @@ class TestLoading(unittest.TestCase):
 
     @ignore_warnings
     def testMeta(self):
-        self.loader.init_meta()
         session = dal.get_session()
         metas = session.query(Meta).all()
         self.assertGreaterEqual(len(metas), 2)
 
     @ignore_warnings
     def testEncodingTerm(self):
-        m_ontology = self.loader.load_ontology('fypo')
+        session = dal.get_session()
+        m_ontology = self.loader.load_ontology('fypo', session)
         term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0005645')
         o_term = self.client.detail(term)
-        m_term = self.loader.load_term(o_term, m_ontology)
+        m_term = self.loader.load_term(o_term, m_ontology, session)
         self.assertIn('λ', m_term.description)
 
     @ignore_warnings
     def testSingleTerm(self):
-        m_ontology = self.loader.load_ontology('fypo')
+        session = dal.get_session()
+        m_ontology = self.loader.load_ontology('fypo', session)
         term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0000001')
         o_term = self.client.detail(term)
-        with dal.session_scope() as session:
-            m_term = self.loader.load_term(o_term, m_ontology)
-            session.commit()
-            self.assertGreaterEqual(len(m_term.child_terms), 6)
+        m_term = self.loader.load_term(o_term, m_ontology, session)
+        session.commit()
+        self.assertGreaterEqual(len(m_term.child_terms), 6)
 
     @ignore_warnings
     def testOntologiesList(self):
         self.assertIsInstance(self.loader.allowed_ontologies, list)
         self.assertIn('go', self.loader.allowed_ontologies)
+
+
+    @ignore_warnings
+    def testRelationsShips(self):
+        session = dal.get_session()
+        m_ontology = self.loader.load_ontology('go', session)
+        term = helpers.Term(ontology_name='go', iri='http://purl.obolibrary.org/obo/GO_0000228')
+        o_term = self.client.detail(term)
+        m_term = self.loader.load_term(o_term, m_ontology, session)
+        session.commit()
+        print(m_term.child_terms.all())
+
+
+
