@@ -42,9 +42,8 @@ def ignore_warnings(test_func):
 
 class TestLoading(unittest.TestCase):
     _multiprocess_shared_ = False
-    # db_url = 'sqlite://'
+    db_url = 'sqlite://'
 
-    db_url = 'mysql://marc:projet@localhost:3306/ols_ontology?charset=utf8'
 
     def setUp(self):
         dal.wipe_schema(self.db_url)
@@ -56,10 +55,11 @@ class TestLoading(unittest.TestCase):
         # test retrieve
         # test try to create duplicated
         ontology_name = 'cvdo'
-        m_ontology = self.loader.load_ontology(ontology_name)
-        logger.info('Loaded ontology %s', m_ontology)
 
         with dal.session_scope() as session:
+            m_ontology = self.loader.load_ontology(ontology_name)
+            session.add(m_ontology)
+            logger.info('Loaded ontology %s', m_ontology)
             r_ontology = session.query(Ontology).filter_by(name=ontology_name,
                                                            namespace=m_ontology.namespace).one()
             logger.info('(RE) Loaded ontology %s', r_ontology)
@@ -85,7 +85,7 @@ class TestLoading(unittest.TestCase):
         ontologies = session.query(Ontology).filter_by(name=ontology_name)
         self.assertEqual(ontologies.count(), 2)
         session = dal.get_session()
-        self.loader.wipe_ontology(ontology_name=ontology_name, session=session)
+        self.loader.wipe_ontology(ontology_name=ontology_name)
         ontologies = session.query(Ontology).filter_by(name=ontology_name).count()
         self.assertEqual(ontologies, 0)
 
@@ -93,7 +93,7 @@ class TestLoading(unittest.TestCase):
     def testLoadOntologyTerms(self):
         session = dal.get_session()
         ontology_name = 'cio'
-        expected = self.loader.load_ontology_terms(ontology_name, session)
+        expected = self.loader.load_ontology_terms(ontology_name)
         logger.info('Expected terms %s', expected)
         s_terms = session.query(Term).filter(Ontology.name == ontology_name)
         inserted = s_terms.count()
@@ -102,7 +102,7 @@ class TestLoading(unittest.TestCase):
 
     @ignore_warnings
     def testLoadTimeMeta(self):
-        ontology_name = 'bto'
+        ontology_name = 'bfo'
         self.loader.options['wipe'] = False
         m_ontology = self.loader.load_all(ontology_name)
         self.assertTrue(m_ontology)
@@ -149,7 +149,7 @@ class TestLoading(unittest.TestCase):
                 session.add_all([closure_1, closure_2, closure_3])
 
         with dal.session_scope() as session:
-            self.loader.wipe_ontology('GO', session)
+            self.loader.wipe_ontology('GO')
             self.assertEqual(session.query(Term).count(), 4)
             self.assertEqual(session.query(Synonym).count(), 0)
             self.assertEqual(session.query(AltId).count(), 0)
@@ -159,6 +159,7 @@ class TestLoading(unittest.TestCase):
     @ignore_warnings
     def testMeta(self):
         session = dal.get_session()
+        self.loader.init_meta()
         metas = session.query(Meta).all()
         self.assertGreaterEqual(len(metas), 2)
 
@@ -181,7 +182,7 @@ class TestLoading(unittest.TestCase):
             o_term = self.client.detail(term)
             m_term = self.loader.load_term(o_term, m_ontology, session)
             session.commit()
-            self.assertGreaterEqual(len(m_term.child_terms), 6)
+            self.assertGreaterEqual(len(m_term.parent_terms), 6)
 
     @ignore_warnings
     def testOntologiesList(self):
@@ -202,4 +203,6 @@ class TestLoading(unittest.TestCase):
             for s_term in list_bto:
                 term = helpers.Term(ontology_name='bto', iri='http://purl.obolibrary.org/obo/' + s_term)
                 o_term = self.client.detail(term)
-                session.add(self.loader.load_term(o_term, m_ontology, session))
+                m_term = self.loader.load_term(o_term, m_ontology, session)
+                session.add(m_term)
+                self.assertGreaterEqual(len(m_term.parent_terms), 0 )
