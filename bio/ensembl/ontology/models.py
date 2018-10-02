@@ -18,7 +18,7 @@ import logging
 from sqlalchemy import *
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship, synonym
+from sqlalchemy.orm import relationship, synonym, backref
 
 import ebi.ols.api.helpers as helpers
 
@@ -47,7 +47,6 @@ Base = declarative_base()
 
 class LoadAble(object):
     _load_map = dict()
-    __table_args__ = {'mysql_engine': 'MyISAM'}
 
     def __init__(self, helper=None, **kwargs):
         if helper and isinstance(helper, helpers.OLSHelper):
@@ -75,6 +74,7 @@ class Meta(Base):
     __tablename__ = 'meta'
     __table_args__ = (
         Index('key_value_idx', 'meta_key', 'meta_value', unique=True),
+        {'mysql_engine': 'MyISAM'}
     )
 
     meta_id = Column(Integer, primary_key=True)
@@ -90,6 +90,7 @@ class Ontology(LoadAble, Base):
     __tablename__ = 'ontology'
     __table_args__ = (
         Index('name_namespace_idx', 'name', 'namespace', unique=True),
+        {'mysql_engine': 'MyISAM'}
     )
 
     _load_map = dict(
@@ -139,6 +140,10 @@ class Ontology(LoadAble, Base):
 class RelationType(LoadAble, Base):
     __tablename__ = 'relation_type'
 
+    __table_args__ = (
+        {'mysql_engine': 'MyISAM'}
+    )
+
     def __dir__(self):
         return ['relation_type_id', 'name']
 
@@ -148,6 +153,9 @@ class RelationType(LoadAble, Base):
 
 class Subset(LoadAble, Base):
     __tablename__ = 'subset'
+    __table_args__ = (
+        {'mysql_engine': 'MyISAM'}
+    )
 
     _load_map = dict(
         definition='description'
@@ -166,6 +174,7 @@ class Term(LoadAble, Base):
     __table_args__ = (
         Index('ontology_acc_idx', 'ontology_id', 'accession', unique=True),
         Index('term_name_idx', 'name', mysql_length=100),
+        {'mysql_engine': 'MyISAM'}
     )
 
     def __dir__(self):
@@ -186,8 +195,8 @@ class Term(LoadAble, Base):
 
     alt_ids = relationship("AltId", back_populates="term", cascade='all')
     synonyms = relationship("Synonym", cascade="delete")
-    child_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.parent_term_id')
-    parent_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.child_term_id')
+    child_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.child_term_id')
+    parent_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.parent_term_id')
 
     child_closures = relationship('Closure', foreign_keys='Closure.child_term_id', cascade='delete')
     parent_closures = relationship('Closure', foreign_keys='Closure.parent_term_id', cascade='delete')
@@ -209,22 +218,12 @@ class Term(LoadAble, Base):
         subparents = self.subparent_closures.all()
         return childs + parents + subparents
 
-    """
-    @hybrid_property
-    def description(self):
-        return self._description
-
-    @description.setter
-    def description(self, description):
-        print('///', description.encode().decode('iso8859-1', 'ignore'))
-        self._description = description.encode().decode('iso8859-1', 'ignore')
-    """
-
 
 class AltId(LoadAble, Base):
     __tablename__ = 'alt_id'
     __table_args__ = (
         Index('term_alt_idx', 'term_id', 'alt_id', unique=True),
+        {'mysql_engine': 'MyISAM'}
     )
 
     def __dir__(self):
@@ -242,7 +241,8 @@ class Closure(LoadAble, Base):
     __tablename__ = 'closure'
     __table_args__ = (
         Index('child_parent_idx', 'child_term_id', 'parent_term_id', 'subparent_term_id', 'ontology_id', unique=True),
-        Index('parent_subparent_idx', 'parent_term_id', 'subparent_term_id')
+        Index('parent_subparent_idx', 'parent_term_id', 'subparent_term_id'),
+        {'mysql_engine': 'MyISAM'}
     )
 
     def __dir__(self):
@@ -265,11 +265,12 @@ class Closure(LoadAble, Base):
                                   back_populates='subparent_closures')
 
 
-class Relation(Base):
+class Relation(LoadAble, Base):
     __tablename__ = 'relation'
     __table_args__ = (
         Index('child_parent__term_idx', 'child_term_id', 'parent_term_id', 'relation_type_id', 'intersection_of',
               'ontology_id', unique=True),
+        {'mysql_engine': 'MyISAM'}
     )
 
     def __dir__(self):
@@ -298,6 +299,7 @@ class Synonym(LoadAble, Base):
     __tablename__ = 'synonym'
     __table_args__ = (
         Index('term_synonym_idx', 'term_id', 'synonym_id', unique=True),
+        {'mysql_engine': 'MyISAM'}
         # Index('term_name_idx', 'name', mysql_length=2048),
     )
 
@@ -307,7 +309,7 @@ class Synonym(LoadAble, Base):
     type = Column(Enum(SynonymTypeEnum))
     db_xref = Column('dbxref', Unicode(500), nullable=True)
 
-    term = relationship('Term', cascade="all")
+    term = relationship('Term', back_populates='synonyms')
 
     def __repr__(self):
         return '<Synonym(synonym_id={}, term_id={}, name={}, type={})>'.format(

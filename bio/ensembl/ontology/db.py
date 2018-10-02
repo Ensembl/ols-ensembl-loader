@@ -37,23 +37,24 @@ class DataAccessLayer:
 
     def db_init(self, conn_string, **options):
         self.engine = sqlalchemy.create_engine(conn_string,
-                                               pool_recycle=options.get('timeout', 36000),
+                                               pool_recycle=options.get('pool_recycle', 280),
+                                               pool_size=options.get('pool_size', 100),
                                                echo=options.get('echo', False),
                                                encoding='utf8',
                                                convert_unicode=True)
         self.options = options or {}
         self.metadata.create_all(self.engine)
         self.connection = self.engine.connect()
-        return self.connection
 
     def wipe_schema(self, conn_string):
         engine = sqlalchemy.create_engine(conn_string, echo=False)
         Base.metadata.drop_all(engine)
 
     def get_session(self):
-        print()
-        return Session(bind=self.engine, autoflush=self.options.get('autoflush', False),
-                       autocommit=self.options.get('autocommit', False))
+        session = Session(bind=self.engine, autoflush=self.options.get('autoflush', False),
+                          autocommit=self.options.get('autocommit', False))
+        logger.debug('Create a new session ...%s ', session)
+        return session
 
     @contextlib.contextmanager
     def session_scope(self):
