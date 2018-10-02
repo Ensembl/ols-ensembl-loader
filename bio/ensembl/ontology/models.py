@@ -1,11 +1,24 @@
 # -*- coding: utf-8 -*-
+"""
+.. See the NOTICE file distributed with this work for additional information
+   regarding copyright ownership.
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+       http://www.apache.org/licenses/LICENSE-2.0
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
 import enum
 import logging
 
 from sqlalchemy import *
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, synonym, backref
 
 import ebi.ols.api.helpers as helpers
 
@@ -17,6 +30,9 @@ SQLAlchemy database models for OLS ontologies loading
 """
 __all__ = ['Ontology', 'Meta', 'Term', 'Subset', 'RelationType', 'Closure', 'Relation', 'AltId', 'Synonym',
            'SynonymTypeEnum']
+
+long_string = String(5000)
+long_string = long_string.with_variant(String(5000, collation='utf8_general_ci'), 'mysql')
 
 
 class SynonymTypeEnum(enum.Enum):
@@ -32,8 +48,7 @@ Base = declarative_base()
 class LoadAble(object):
     _load_map = dict()
 
-    def __init__(self, helper=None, **kwargs) -> None:
-        # print('in it 1', helper, isinstance(helper, helpers.OLSHelper))
+    def __init__(self, helper=None, **kwargs):
         if helper and isinstance(helper, helpers.OLSHelper):
             constructor_args = {key: getattr(helper, self._load_map.get(key, key), None) for key in dir(self)}
             # logger.debug('helper %s args: %s', helper.__class__, constructor_args)
@@ -50,11 +65,16 @@ class LoadAble(object):
                       isinstance(getattr(self, name), (type(None), str, int, float, bool))}
         return '<{}({})>'.format(class_name, attributes)
 
+    def update_from_helper(self, helper):
+        [self.__setattr__(key, getattr(helper, self._load_map.get(key, key), None)) for key in dir(self) if
+         getattr(helper, self._load_map.get(key, key), None) is not None]
+
 
 class Meta(Base):
     __tablename__ = 'meta'
     __table_args__ = (
         Index('key_value_idx', 'meta_key', 'meta_value', unique=True),
+        {'mysql_engine': 'MyISAM'}
     )
 
     meta_id = Column(Integer, primary_key=True)
@@ -70,6 +90,7 @@ class Ontology(LoadAble, Base):
     __tablename__ = 'ontology'
     __table_args__ = (
         Index('name_namespace_idx', 'name', 'namespace', unique=True),
+        {'mysql_engine': 'MyISAM'}
     )
 
     _load_map = dict(
@@ -85,7 +106,7 @@ class Ontology(LoadAble, Base):
     _version = Column('data_version', String(64), nullable=True)
     title = Column(String(255), nullable=True)
 
-    terms = relationship('Term', cascade="all,delete", backref="ontology")
+    terms = relationship('Term', cascade="all, delete", backref="ontology")
 
     @hybrid_property
     def namespace(self):
@@ -112,9 +133,16 @@ class Ontology(LoadAble, Base):
         else:
             self._version = version
 
+    namespace = synonym('_namespace', descriptor=namespace)
+    version = synonym('_version', descriptor=version)
+
 
 class RelationType(LoadAble, Base):
     __tablename__ = 'relation_type'
+
+    __table_args__ = (
+        {'mysql_engine': 'MyISAM'}
+    )
 
     def __dir__(self):
         return ['relation_type_id', 'name']
@@ -125,6 +153,9 @@ class RelationType(LoadAble, Base):
 
 class Subset(LoadAble, Base):
     __tablename__ = 'subset'
+    __table_args__ = (
+        {'mysql_engine': 'MyISAM'}
+    )
 
     _load_map = dict(
         definition='description'
@@ -143,6 +174,7 @@ class Term(LoadAble, Base):
     __table_args__ = (
         Index('ontology_acc_idx', 'ontology_id', 'accession', unique=True),
         Index('term_name_idx', 'name', mysql_length=100),
+        {'mysql_engine': 'MyISAM'}
     )
 
     def __dir__(self):
@@ -151,18 +183,20 @@ class Term(LoadAble, Base):
 
     term_id = Column(Integer, primary_key=True)
     ontology_id = Column(ForeignKey(Ontology.id), nullable=False)
-    subsets = Column(Text(65535))
+    subsets = Column(Unicode(1000))
     accession = Column(String(64), nullable=False, unique=True)
-    name = Column(Text(65535, convert_unicode=True), nullable=False)
-    description = Column('definition', Text(65535, convert_unicode=True))
+    name = Column(long_string, nullable=False)
+
+    description = Column('definition', long_string)
+
     is_root = Column(Boolean, nullable=False, default=False)
     is_obsolete = Column(Boolean, nullable=False, default=False)
-    iri = Column(Text(65535))
+    iri = Column(Unicode(1000))
 
     alt_ids = relationship("AltId", back_populates="term", cascade='all')
     synonyms = relationship("Synonym", cascade="delete")
-    child_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.parent_term_id')
-    parent_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.child_term_id')
+    child_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.child_term_id')
+    parent_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.parent_term_id')
 
     child_closures = relationship('Closure', foreign_keys='Closure.child_term_id', cascade='delete')
     parent_closures = relationship('Closure', foreign_keys='Closure.parent_term_id', cascade='delete')
@@ -189,6 +223,7 @@ class AltId(LoadAble, Base):
     __tablename__ = 'alt_id'
     __table_args__ = (
         Index('term_alt_idx', 'term_id', 'alt_id', unique=True),
+        {'mysql_engine': 'MyISAM'}
     )
 
     def __dir__(self):
@@ -206,7 +241,8 @@ class Closure(LoadAble, Base):
     __tablename__ = 'closure'
     __table_args__ = (
         Index('child_parent_idx', 'child_term_id', 'parent_term_id', 'subparent_term_id', 'ontology_id', unique=True),
-        Index('parent_subparent_idx', 'parent_term_id', 'subparent_term_id')
+        Index('parent_subparent_idx', 'parent_term_id', 'subparent_term_id'),
+        {'mysql_engine': 'MyISAM'}
     )
 
     def __dir__(self):
@@ -229,11 +265,12 @@ class Closure(LoadAble, Base):
                                   back_populates='subparent_closures')
 
 
-class Relation(Base):
+class Relation(LoadAble, Base):
     __tablename__ = 'relation'
     __table_args__ = (
         Index('child_parent__term_idx', 'child_term_id', 'parent_term_id', 'relation_type_id', 'intersection_of',
               'ontology_id', unique=True),
+        {'mysql_engine': 'MyISAM'}
     )
 
     def __dir__(self):
@@ -254,7 +291,7 @@ class Relation(Base):
     relation_type = relationship('RelationType')
 
     def __repr__(self):
-        return '<Relatiosddn(relation_id={}, child_term_id={}, parent_term_id={}, relation_type={})>'.format(
+        return '<Relation(relation_id={}, child_term_id={}, parent_term_id={}, relation_type={})>'.format(
             self.relation_id, self.child_term.accession, self.parent_term.accession, self.relation_type.name)
 
 
@@ -262,16 +299,17 @@ class Synonym(LoadAble, Base):
     __tablename__ = 'synonym'
     __table_args__ = (
         Index('term_synonym_idx', 'term_id', 'synonym_id', unique=True),
+        {'mysql_engine': 'MyISAM'}
         # Index('term_name_idx', 'name', mysql_length=2048),
     )
 
     synonym_id = Column(Integer, primary_key=True)
     term_id = Column(ForeignKey('term.term_id'), nullable=False)
-    name = Column(Text(65535, convert_unicode=True), nullable=False)
+    name = Column('name', long_string, nullable=False)
     type = Column(Enum(SynonymTypeEnum))
-    db_xref = Column('dbxref', String(255, convert_unicode=True), nullable=True)
+    db_xref = Column('dbxref', Unicode(500), nullable=True)
 
-    term = relationship('Term', cascade="all")
+    term = relationship('Term', back_populates='synonyms')
 
     def __repr__(self):
         return '<Synonym(synonym_id={}, term_id={}, name={}, type={})>'.format(
