@@ -275,6 +275,7 @@ class OlsLoader(object):
 
                     logger.debug('  Term is defined in another ontology: %s', o_related.ontology_name)
                     o_term_details = self.client.term(o_related.iri,
+                                                      silent=True,
                                                       unique=True) if not o_related.is_defining_ontology else o_related
                     if o_term_details is not None:
                         o_onto_details = self.__call_client('ontology', o_term_details.ontology_name)
@@ -316,8 +317,7 @@ class OlsLoader(object):
             logger.info('   ... Done (%s)', n_relations)
         return n_relations
 
-    def load_term_synonyms(self, m_term, o_term, session=None):
-        session = session or dal.get_session()
+    def load_term_synonyms(self, m_term, o_term, session):
         logger.info('   Loading term synonyms...')
         session.query(Synonym).filter(Synonym.term == m_term).delete()
         n_synonyms = 0
