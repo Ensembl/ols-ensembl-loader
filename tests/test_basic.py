@@ -44,7 +44,6 @@ class TestLoading(unittest.TestCase):
     _multiprocess_shared_ = False
     db_url = 'sqlite://'
 
-
     def setUp(self):
         dal.wipe_schema(self.db_url)
         self.loader = OlsLoader(self.db_url)
@@ -135,13 +134,16 @@ class TestLoading(unittest.TestCase):
                 m_term = Term(accession='T:0000%s' % i, name='Term %s' % i, ontology=m_ontology)
                 m_term_2 = Term(accession='T2:0000%s' % i, name='Term %s' % i, ontology=m_ontology_2)
                 m_term_3 = Term(accession='T3:0000%s' % i, name='Term %s' % i, ontology=m_ontology_3)
-                m_term.synonyms.append(
-                    Synonym(name='TS:000%s' % i, type=SynonymTypeEnum.EXACT, db_xref='REF:000%s' % i))
-                m_term_2.synonyms.append(
-                    Synonym(name='TS2:000%s' % i, type=SynonymTypeEnum.EXACT, db_xref='REF:000%s' % i))
-                m_term.alt_ids.append(AltId(accession='ATL:000%s' % i))
-                m_term.add_child_relation(rel_type=rel_type, child_term=m_term_3, ontology=m_ontology)
-                m_term.add_parent_relation(rel_type=rel_type, parent_term=m_term_2, ontology=m_ontology_2)
+                syn_1 = Synonym(name='TS:000%s' % i, type=SynonymTypeEnum.EXACT, db_xref='REF:000%s' % i)
+                m_term.synonyms.append(syn_1)
+                syn_2 = Synonym(name='TS2:000%s' % i, type=SynonymTypeEnum.EXACT, db_xref='REF:000%s' % i)
+                m_term_2.synonyms.append(syn_2)
+                session.add_all([syn_1, syn_2])
+                alt_id = AltId(accession='ATL:000%s' % i)
+                m_term.alt_ids.append(alt_id)
+                session.add(alt_id)
+                session.add(m_term.add_child_relation(rel_type=rel_type, child_term=m_term_3, ontology=m_ontology))
+                session.add(m_term.add_parent_relation(rel_type=rel_type, parent_term=m_term_2, ontology=m_ontology_2))
                 closure_1 = Closure(child_term=m_term, parent_term=m_term_2, distance=1, ontology=m_ontology)
                 closure_2 = Closure(parent_term=m_term, child_term=m_term_3, distance=3, ontology=m_ontology_2)
                 closure_3 = Closure(parent_term=m_term_2, child_term=m_term_3, subparent_term=m_term, distance=2,
@@ -206,3 +208,15 @@ class TestLoading(unittest.TestCase):
                 m_term = self.loader.load_term(o_term, m_ontology, session)
                 session.add(m_term)
                 self.assertGreaterEqual(len(m_term.parent_terms), 0 )
+
+    def testRelationOtherOntology(self):
+        with dal.session_scope() as session:
+            m_ontology = self.loader.load_ontology('efo')
+            session.add(m_ontology)
+            term = helpers.Term(ontology_name='efo', iri='http://www.ebi.ac.uk/efo/EFO_0002215')
+            o_term = self.client.detail(term)
+            m_term = self.loader.load_term(o_term, m_ontology, session)
+            session.add(m_term)
+            self.assertEqual(2, session.query(Ontology).count())
+            term = session.query(Term).filter_by(accession='BTO:0000164')
+            self.assertEqual(1, term.count())

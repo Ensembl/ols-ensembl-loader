@@ -1,6 +1,5 @@
 language: python
 python:
-  - "3.5"
   - "3.6"
 # command to install dependencies
 install:
@@ -10,7 +9,7 @@ install:
   - pip install python-coveralls
 # command to run tests
 script:
-  - nosetests --verbose --with-coverage --cover-package=bio.ensembl
+  - nosetests tests.test_basic --verbose --with-coverage --cover-package=bio.ensembl
 after_success:
   - coveralls
 notifications:
