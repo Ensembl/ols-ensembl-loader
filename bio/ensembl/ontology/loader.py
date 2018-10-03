@@ -32,7 +32,8 @@ class OlsLoader(object):
     """ class loader for mapping retrieved DTO from OLS client into expected database fields """
     __relation_map = {
         'parents': 'is_a',
-        'children': 'is_a'
+        'children': 'is_a',
+        'derives_from/develops_from': 'develops_from'
     }
     __ignored_relations = [
         'graph', 'jstree', 'descendants', 'ancestors', 'hierarchicalParents',  # 'parents',
@@ -274,39 +275,42 @@ class OlsLoader(object):
 
                     logger.debug('  Term is defined in another ontology: %s', o_related.ontology_name)
                     o_term_details = self.client.term(o_related.iri,
-                                                        unique=True) if not o_related.is_defining_ontology else o_related
-                    o_onto_details = self.__call_client('ontology', o_term_details.ontology_name)
+                                                      unique=True) if not o_related.is_defining_ontology else o_related
+                    if o_term_details is not None:
+                        o_onto_details = self.__call_client('ontology', o_term_details.ontology_name)
 
-                    r_ontology, created = get_one_or_create(Ontology,
-                                                            session,
-                                                            name=o_onto_details.ontology_id,
-                                                            namespace=o_related.obo_name_space,
-                                                            create_method_kwargs=dict(
-                                                                version=o_onto_details.version,
-                                                                title=o_onto_details.title))
-                    m_related, created = get_one_or_create(Term,
-                                                           session,
-                                                           accession=o_term_details.obo_id,
-                                                           create_method_kwargs=dict(
-                                                               helper=o_term_details,
-                                                               ontology=r_ontology,
-                                                           ))
-                    # hack to reverse OBO loading behavior
-                    if rel_name == 'children':
-                        parent_term = m_term
-                        child_term = m_related
+                        r_ontology, created = get_one_or_create(Ontology,
+                                                                session,
+                                                                name=o_onto_details.ontology_id,
+                                                                namespace=o_related.obo_name_space,
+                                                                create_method_kwargs=dict(
+                                                                    version=o_onto_details.version,
+                                                                    title=o_onto_details.title))
+                        m_related, created = get_one_or_create(Term,
+                                                               session,
+                                                               accession=o_term_details.obo_id,
+                                                               create_method_kwargs=dict(
+                                                                   helper=o_term_details,
+                                                                   ontology=r_ontology,
+                                                               ))
+                        # hack to reverse OBO loading behavior
+                        if rel_name == 'children':
+                            parent_term = m_term
+                            child_term = m_related
+                        else:
+                            parent_term = m_related
+                            child_term = m_term
+                        relation, r_created = get_one_or_create(Relation,
+                                                                session,
+                                                                parent_term=parent_term,
+                                                                child_term=child_term,
+                                                                relation_type=relation_type,
+                                                                ontology=m_term.ontology)
+                        n_relations += 1 if r_created else 0
+                        logger.info('Loaded relation %s %s %s', m_term.accession, relation_type.name,
+                                    m_related.accession)
                     else:
-                        parent_term = m_related
-                        child_term = m_term
-                    relation, r_created = get_one_or_create(Relation,
-                                                            session,
-                                                            parent_term=parent_term,
-                                                            child_term=child_term,
-                                                            relation_type=relation_type,
-                                                            ontology=m_term.ontology)
-                    n_relations += 1 if r_created else 0
-                    logger.info('Loaded relation %s %s %s', m_term.accession, relation_type.name,
-                                m_related.accession)
+                        logger.error('Unable to find term %s defined in %s', o_related.iri, o_related.ontology_name)
                 else:
                     logger.info('Ignored related %s', o_related)
             logger.info('   ... Done (%s)', n_relations)
