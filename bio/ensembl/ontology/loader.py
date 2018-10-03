@@ -35,7 +35,7 @@ class OlsLoader(object):
         'children': 'is_a'
     }
     __ignored_relations = [
-        'graph', 'jstree', 'descendants', 'ancestors', 'hierarchicalParents', #'parents',
+        'graph', 'jstree', 'descendants', 'ancestors', 'hierarchicalParents',  # 'parents',
         'hierarchicalAncestors', 'hierarchicalChildren', 'hierarchicalDescendants'
     ]
 
@@ -270,11 +270,13 @@ class OlsLoader(object):
             logger.info('   Loading %s relation %s (%s)...', m_term.accession, rel_name, relation_type.name)
             logger.info('   %s related terms ', len(o_relatives))
             for o_related in o_relatives:
-                if o_related.accession is not None and o_related.is_defining_ontology and \
-                        o_related.ontology_name in self.allowed_ontologies:
+                if o_related.accession is not None and o_related.ontology_name in self.allowed_ontologies:
 
                     logger.debug('  Term is defined in another ontology: %s', o_related.ontology_name)
-                    o_onto_details = self.__call_client('ontology', o_related.ontology_name)
+                    o_term_details = self.client.term(o_related.iri,
+                                                        unique=True) if not o_related.is_defining_ontology else o_related
+                    o_onto_details = self.__call_client('ontology', o_term_details.ontology_name)
+
                     r_ontology, created = get_one_or_create(Ontology,
                                                             session,
                                                             name=o_onto_details.ontology_id,
@@ -284,9 +286,9 @@ class OlsLoader(object):
                                                                 title=o_onto_details.title))
                     m_related, created = get_one_or_create(Term,
                                                            session,
-                                                           accession=o_related.obo_id,
+                                                           accession=o_term_details.obo_id,
                                                            create_method_kwargs=dict(
-                                                               helper=o_related,
+                                                               helper=o_term_details,
                                                                ontology=r_ontology,
                                                            ))
                     # hack to reverse OBO loading behavior
