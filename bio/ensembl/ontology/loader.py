@@ -13,10 +13,10 @@
    limitations under the License.
 """
 import datetime
-import time
 from os import getenv
 
 import dateutil.parser
+import time
 from coreapi.exceptions import NetworkError
 from requests.exceptions import ConnectionError
 
@@ -48,7 +48,7 @@ class OlsLoader(object):
     }
     _default_options = dict(
         echo=False,
-        wipe=False,
+        wipe=True,
         db_version=getenv('ENS_VERSION'),
         max_retry=5,
         timeout=720
@@ -82,15 +82,14 @@ class OlsLoader(object):
                 'cl', 'cmo', 'eco', 'mod', 'mp', 'ogms', 'uo']
 
     def load_all(self, ontology_name):
-        self.wipe_ontology(ontology_name)
-        with dal.session_scope() as session:
-            if self.options.get('wipe', False):
-                logger.info('Removing ontology %s', ontology_name)
-                metas = session.query(Meta).filter(Meta.meta_key.like("%" + ontology_name + "%")).all()
-                for meta in metas:
-                    meta.delete()
-            else:
-                logger.info('Updating ontology %s', ontology_name)
+        if self.options.get('wipe') is True:
+            self.wipe_ontology(ontology_name)
+            with dal.session_scope() as session:
+                if self.options.get('wipe', False):
+                    logger.info('Removing ontology %s', ontology_name)
+                    metas = session.query(Meta).filter(Meta.meta_key.like("%" + ontology_name + "%")).delete()
+                else:
+                    logger.info('Updating ontology %s', ontology_name)
         with dal.session_scope() as session:
             start = datetime.datetime.now()
             meta, created = get_one_or_create(Meta,
@@ -222,7 +221,7 @@ class OlsLoader(object):
         logger.info('Loaded Term %s ...', m_term)
         relation_types = [rel for rel in o_term.relations_types if rel not in self.__ignored_relations]
         logger.debug('Expected relations to load %s', relation_types)
-        self.load_term_relations(m_term, relation_types, session)
+        self.load_term_relations(m_term, o_term, relation_types, session)
         self.load_term_synonyms(m_term, o_term, session)
         self.load_alt_ids(o_term, m_term, session)
         self.load_term_subsets(m_term, session)
@@ -230,7 +229,8 @@ class OlsLoader(object):
         return m_term
 
     def load_alt_ids(self, o_term, m_term, session):
-        session.query(AltId).filter(AltId.term == m_term).delete()
+        if self.options.get('wipe') is True:
+            session.query(AltId).filter(AltId.term == m_term).delete()
         for alt_id in o_term.annotation.has_alternative_id:
             logger.info('Loaded AltId %s', alt_id)
             m_term.alt_ids.append(AltId(accession=alt_id))
@@ -254,15 +254,16 @@ class OlsLoader(object):
             logger.info('   ... Done')
         return subsets
 
-    def load_term_relations(self, m_term, relation_types, session):
+    def load_term_relations(self, m_term, o_term, relation_types, session):
         # remove previous relationships
-        session.query(Relation).filter(Relation.child_term == m_term).delete()
-        session.query(Relation).filter(Relation.parent_term == m_term).delete()
+        if self.options.get('wipe') is True:
+            session.query(Relation).filter(Relation.child_term == m_term).delete()
+            session.query(Relation).filter(Relation.parent_term == m_term).delete()
 
         n_relations = 0
         for rel_name in relation_types:
             # updates relation types
-            o_term = helpers.Term(ontology_name=m_term.ontology.name, iri=m_term.iri)
+            o_term = helpers.Term(ontology_name=o_term.ontology_name, iri=m_term.iri)
             o_relatives = o_term.load_relation(rel_name)
             relation_type, created = get_one_or_create(RelationType,
                                                        session,
@@ -289,7 +290,8 @@ class OlsLoader(object):
                                                                     title=o_onto_details.title))
                         m_related, created = get_one_or_create(Term,
                                                                session,
-                                                               accession=o_term_details.obo_id,
+                                                               accession=o_term_details.obo_id or
+                                                                         o_term_details.short_form.replace('_', ':'),
                                                                create_method_kwargs=dict(
                                                                    helper=o_term_details,
                                                                    ontology=r_ontology,
@@ -319,7 +321,8 @@ class OlsLoader(object):
 
     def load_term_synonyms(self, m_term, o_term, session):
         logger.info('   Loading term synonyms...')
-        session.query(Synonym).filter(Synonym.term == m_term).delete()
+        if self.options.get('wipe') is True:
+            session.query(Synonym).filter(Synonym.term == m_term).delete()
         n_synonyms = 0
 
         obo_synonyms = o_term.obo_synonym or []
