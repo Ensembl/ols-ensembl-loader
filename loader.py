@@ -5,7 +5,7 @@ import os
 import sys
 from bio.ensembl.ontology.loader import OlsLoader
 from bio.ensembl.ontology.db import dal
-# allow loader.py to be run from any path
+# allow ols.py to be run from any path
 os.chdir(os.path.normpath(os.path.join(os.path.abspath(__file__), os.pardir)))
 
 logging.basicConfig(level=logging.INFO,

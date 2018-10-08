@@ -15,11 +15,12 @@
 import datetime
 import unittest
 import warnings
+import logging
 
 import ebi.ols.api.helpers as helpers
-from bio.ensembl.ontology.db import *
+from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader import OlsLoader
-from bio.ensembl.ontology.models import *
+from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
 
 logging.basicConfig(level=logging.DEBUG,
@@ -59,6 +60,7 @@ class TestLoading(unittest.TestCase):
             m_ontology = self.loader.load_ontology(ontology_name)
             session.add(m_ontology)
             logger.info('Loaded ontology %s', m_ontology)
+            logger.info('number of Terms %s', m_ontology.number_of_terms)
             r_ontology = session.query(Ontology).filter_by(name=ontology_name,
                                                            namespace=m_ontology.namespace).one()
             logger.info('(RE) Loaded ontology %s', r_ontology)
@@ -102,7 +104,10 @@ class TestLoading(unittest.TestCase):
     @ignore_warnings
     def testLoadTimeMeta(self):
         ontology_name = 'bfo'
-        self.loader.options['wipe'] = False
+        self.loader.options['wipe'] = True
+        with dal.session_scope() as session:
+            o_ontology = self.client.ontology(ontology_name)
+            self.loader._ontology_meta(o_ontology, session)
         m_ontology = self.loader.load_all(ontology_name)
         self.assertTrue(m_ontology)
         session = dal.get_session()
