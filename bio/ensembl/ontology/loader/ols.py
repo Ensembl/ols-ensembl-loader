@@ -18,7 +18,7 @@ from os import getenv
 
 import dateutil.parser
 import time
-from coreapi.exceptions import NetworkError, ErrorMessage
+from coreapi.exceptions import CoreAPIException
 from requests.exceptions import ConnectionError
 from sqlalchemy.orm.exc import NoResultFound
 
@@ -89,6 +89,7 @@ class OlsLoader(object):
         :param method: client method to call
         :param args:  client methods args
         :return: client response
+
         """
         retry = 0
         max_retry = self.options.get('max_retry')
@@ -96,14 +97,17 @@ class OlsLoader(object):
             try:
                 logger.debug('Calling client.%s(%s)(%s)', method, args, kwargs)
                 return self.client.__getattribute__(method)(*args, **kwargs)
-            except (ConnectionError, NetworkError, ErrorMessage) as e:
-                logger.error('Network error (%s) for %s(%s)(%s): %s ', self.current_ontology, method, args, kwargs, e)
+            except (ConnectionError, CoreAPIException) as e:
+                logger.error('Client call error (%s) for %s(%s)(%s): %s ', self.current_ontology, method, args, kwargs,
+                             e)
                 # wait 5 seconds until next OLS api client try
                 time.sleep(5)
                 retry += 1
                 if retry >= max_retry:
                     logger.fatal('Max API retry for %s(%s)(%s)', method, args, kwargs)
                     raise e
+                else:
+                    self.__call_client(method, args, kwargs)
 
     def load_ontology(self, ontology_name, namespace=None):
         self.current_ontology = ontology_name
@@ -315,12 +319,13 @@ class OlsLoader(object):
                         logger.info('Loaded relation %s %s %s', m_term.accession, relation_type.name,
                                     m_related.accession)
                     else:
-                        logger.warning('Term %s (%s) relation %s with %s not found in %s ',
-                                       m_term.accession, m_term.ontology.name,
-                                       self.__relation_map.get(rel_name, rel_name),
-                                       o_related.iri, o_related.ontology_name)
+                        if o_related.ontology_name in self.allowed_ontologies:
+                            logger.warning('Term %s (%s) relation %s with %s not found in %s ',
+                                           m_term.accession, m_term.ontology.name,
+                                           self.__relation_map.get(rel_name, rel_name),
+                                           o_related.iri, o_related.ontology_name)
                 else:
-                    logger.info('Ignored related %s', o_related)
+                    logger.info('Ignored related %s (%s)', o_related, o_related.ontology_name)
             logger.info('... Done (%s)', n_relations)
         return n_relations
 

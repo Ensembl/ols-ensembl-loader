@@ -61,7 +61,8 @@ class OLSHiveLoader(eHive.BaseRunnable):
                             format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
                             datefmt='%m-%d %H:%M - %s',
                             filename=join(self.param_required('output_dir'),
-                                          self.log_file % self.param_required('ontology_name')))
+                                          self.log_file % self.param_required('ontology_name')),
+                            filemode='w')
         self.ols_loader = OlsLoader(self.param_required('db_url'), **options)
         self.ols_loader.init_meta()
         assert self.param_required('ontology_name') in self.ols_loader.allowed_ontologies
