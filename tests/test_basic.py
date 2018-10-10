@@ -223,3 +223,23 @@ class TestLoading(unittest.TestCase):
             self.assertEqual(2, session.query(Ontology).count())
             term = session.query(Term).filter_by(accession='BTO:0000164')
             self.assertEqual(1, term.count())
+
+    def testSubsets(self):
+        with dal.session_scope() as session:
+            term = helpers.Term(ontology_name='go', iri='http://purl.obolibrary.org/obo/GO_0099565')
+            o_term = self.client.detail(term)
+            m_term = self.loader.load_term(o_term, 'go', session)
+            subsets = session.query(Subset).all()
+            for subset in subsets:
+                self.assertIsNotNone(subset.definition)
+
+            subset = helpers.Property(ontology_name='go', iri='http://www.geneontology.org/formats/oboInOwl#hasBroadSynonym')
+            details = self.client.detail(subset)
+            self.assertIsNone(details.definition, '')
+
+    def testAltIds(self):
+        with dal.session_scope() as session:
+            term = helpers.Term(ontology_name='go', iri='http://purl.obolibrary.org/obo/GO_0005261')
+            o_term = self.client.detail(term)
+            m_term = self.loader.load_term(o_term, 'go', session)
+            self.assertGreaterEqual(len(m_term.alt_ids), 2)

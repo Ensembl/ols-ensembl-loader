@@ -39,15 +39,15 @@ class OLSHiveLoader(eHive.BaseRunnable):
         return {
             'drop_before': True,  # currently not used in pipeline configuration
             'echo': False,
-            'verbosity': 0,
+            'verbosity': 1,
             'log_to': 'dev > null'
         }
 
     def fetch_input(self):
         options = self.param_defaults()
         options['db_version'] = self.param_required('ens_version')
-        if self.param_required('drop_before') is False:
-            options['wipe'] = False
+        if self.param_required('wipe_one'):
+            options['wipe'] = True
 
         db_url_parts = parse.urlparse(self.param_required('db_url'))
         assert db_url_parts.scheme in ('mysql')
@@ -61,8 +61,7 @@ class OLSHiveLoader(eHive.BaseRunnable):
                             format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
                             datefmt='%m-%d %H:%M - %s',
                             filename=join(self.param_required('output_dir'),
-                                          self.log_file % self.param_required('ontology_name')),
-                            filemode='w+')
+                                          self.log_file % self.param_required('ontology_name')))
         self.ols_loader = OlsLoader(self.param_required('db_url'), **options)
         self.ols_loader.init_meta()
         assert self.param_required('ontology_name') in self.ols_loader.allowed_ontologies

@@ -14,11 +14,11 @@
 """
 import datetime
 import logging
-import time
 from os import getenv
 
 import dateutil.parser
-from coreapi.exceptions import NetworkError
+import time
+from coreapi.exceptions import NetworkError, ErrorMessage
 from requests.exceptions import ConnectionError
 from sqlalchemy.orm.exc import NoResultFound
 
@@ -50,11 +50,14 @@ class OlsLoader(object):
     }
     _default_options = dict(
         echo=False,
-        wipe=True,
+        wipe=False,
         db_version=getenv('ENS_VERSION'),
         max_retry=5,
         timeout=720
     )
+
+    allowed_ontologies = ['go', 'so', 'pato', 'hp', 'vt', 'efo', 'po', 'eo', 'to', 'chebi', 'pr', 'fypo', 'peco', 'bfo',
+                          'bto', 'cl', 'cmo', 'eco', 'mod', 'mp', 'ogms', 'uo']
 
     def __init__(self, url, **options):
         self.db_url = url
@@ -64,6 +67,8 @@ class OlsLoader(object):
         self.retry = 0
         self.db_init = False
         dal.db_init(self.db_url, **self.options)
+        logger.info('Loaded with options %s ', self.options)
+        self.current_ontology = None
 
     def init_meta(self):
         with dal.session_scope() as session:
@@ -78,42 +83,6 @@ class OlsLoader(object):
                                   create_method_kwargs=dict(meta_value=meta_value))
         self.db_init = True
 
-    @property
-    def allowed_ontologies(self):
-        return ['go', 'so', 'pato', 'hp', 'vt', 'efo', 'po', 'eo', 'to', 'chebi', 'pr', 'fypo', 'peco', 'bfo', 'bto',
-                'cl', 'cmo', 'eco', 'mod', 'mp', 'ogms', 'uo']
-
-    def load_all(self, ontology_name):
-        if self.options.get('wipe') is True:
-            self.wipe_ontology(ontology_name)
-            with dal.session_scope() as session:
-                logger.info('Removing ontology %s', ontology_name)
-                metas = session.query(Meta).filter(Meta.meta_key.like("%" + ontology_name + "%")).all()
-                for meta in metas:
-                    session.delete(meta)
-        with dal.session_scope() as session:
-            start = datetime.datetime.now()
-            meta, created = get_one_or_create(Meta,
-                                              session,
-                                              meta_key=ontology_name + '_load_date',
-                                              create_method_kwargs=dict(
-                                                  meta_value=ontology_name.upper() + '/' + start.strftime('%c')))
-            if not created:
-                meta.meta_value = start.strftime('%c')
-            m_ontology = self.load_ontology(ontology_name, namespace=ontology_name)
-            session.add(m_ontology)
-            nb_terms = self.load_ontology_terms(m_ontology)
-            ended = datetime.datetime.now()
-            meta_time, created = get_one_or_create(Meta,
-                                                   session,
-                                                   meta_key=ontology_name + '_load_time',
-                                                   create_method_kwargs=dict(
-                                                       meta_value=(ended - start).total_seconds()))
-            if not created:
-                logger.debug('Updating meta_load_time to %s', (ended - start).total_seconds())
-                meta_time.meta_value = (ended - start).total_seconds()
-            return created
-
     def __call_client(self, method, *args, **kwargs):
         """
         Try 'max_retry' time to contact OLS api via its client, reraise error when limit reached.
@@ -127,31 +96,32 @@ class OlsLoader(object):
             try:
                 logger.debug('Calling client.%s(%s)(%s)', method, args, kwargs)
                 return self.client.__getattribute__(method)(*args, **kwargs)
-            except (ConnectionError, NetworkError) as e:
-                logger.error('Network error %s for %s(%s)(%s)', e, method, args, kwargs)
+            except (ConnectionError, NetworkError, ErrorMessage) as e:
+                logger.error('Network error (%s) for %s(%s)(%s): %s ', self.current_ontology, method, args, kwargs, e)
                 # wait 5 seconds until next OLS api client try
                 time.sleep(5)
                 retry += 1
-                if retry == max_retry:
+                if retry >= max_retry:
                     logger.fatal('Max API retry for %s(%s)(%s)', method, args, kwargs)
                     raise e
 
-    def _ontology_meta(self, o_ontology, session):
-        meta, created = get_one_or_create(Meta,
-                                          session,
-                                          meta_key=o_ontology.ontology_id + '_file_date',
-                                          create_method_kwargs=dict(
-                                              meta_value=o_ontology.ontology_id.upper() + '/' + dateutil.parser.parse(
-                                                  o_ontology.updated).strftime('%c')))
-
-        if not created:
-            meta.meta_value = dateutil.parser.parse(o_ontology.updated).strftime('%c')
-        return session.merge(meta)
-
     def load_ontology(self, ontology_name, namespace=None):
+        self.current_ontology = ontology_name
         with dal.session_scope() as session:
+            start = datetime.datetime.now()
+            logger.debug('Updating meta for ontology %s', ontology_name)
+            get_one_or_create(Meta,
+                              session,
+                              meta_key=ontology_name + '_load_date',
+                              create_method_kwargs=dict(
+                                  meta_value=ontology_name.upper() + '/' + start.strftime('%c')))
             o_ontology = self.__call_client('ontology', ontology_name)
-            self._ontology_meta(o_ontology, session)
+            get_one_or_create(Meta,
+                              session,
+                              meta_key=o_ontology.ontology_id + '_file_date',
+                              create_method_kwargs=dict(
+                                  meta_value=o_ontology.ontology_id.upper() + '/' + dateutil.parser.parse(
+                                      o_ontology.updated).strftime('%c')))
             m_ontology, created = get_one_or_create(Ontology,
                                                     session,
                                                     name=o_ontology.ontology_id,
@@ -163,15 +133,20 @@ class OlsLoader(object):
     @staticmethod
     def wipe_ontology(ontology_name):
         with dal.session_scope() as session:
+            logger.info('Wipe ontology %s', ontology_name)
             try:
-                logger.debug('Delete ontology %s', ontology_name)
+                metas = session.query(Meta).filter(Meta.meta_key.like("%" + ontology_name + "%")).all()
+                for meta in metas:
+                    logger.debug('Deleted meta %s', meta)
+                    session.delete(meta)
                 ontologies = session.query(Ontology).filter_by(name=ontology_name).all()
                 for ontology in ontologies:
                     logger.debug('Deleting ontology %s', ontology)
                     session.delete(ontology)
                 return True
             except NoResultFound:
-                logger.debug('Ontology not found')
+                logger.error('Ontology %s not found !', ontology_name)
+            logger.info('... done')
 
     def load_ontology_terms(self, ontology, start=None, end=None):
         nb_terms = 0
@@ -229,7 +204,6 @@ class OlsLoader(object):
 
         logger.info('Loaded Term %s ...', m_term)
         relation_types = [rel for rel in o_term.relations_types if rel not in self.__ignored_relations]
-        logger.debug('Expected relations to load %s', relation_types)
         self.load_term_relations(m_term, o_term, relation_types, session)
         self.load_term_synonyms(m_term, o_term, session)
         self.load_alt_ids(o_term, m_term, session)
@@ -242,33 +216,51 @@ class OlsLoader(object):
             session.query(AltId).filter(AltId.term == m_term).delete()
         for alt_id in o_term.annotation.has_alternative_id:
             logger.info('Loaded AltId %s', alt_id)
-            m_term.alt_ids.append(AltId(accession=alt_id))
+            get_one_or_create(AltId,
+                              session,
+                              accession=alt_id,
+                              create_method_kwargs=dict(accession=alt_id,
+                                                        term=m_term))
+            logger.info('...done')
         return m_term
 
     def load_term_subsets(self, term, session):
         subsets = []
         if term.subsets:
-            logger.info('   Loading term subsets: %s', term.subsets)
+            logger.info('Loading term subsets: %s', term.subsets)
             subset_names = term.subsets.split(',')
             for subset_name in subset_names:
-                logger.debug('      Processing subset %s', subset_name)
-                search = self.__call_client('search', query=subset_name, filters={'ontology': term.ontology.name,
-                                                                                  'type': 'property'})
-                if len(search) == 1:
-                    details = self.__call_client('detail', search[0])
-                    subset, created = get_one_or_create(Subset, session,
-                                                        name=subset_name,
-                                                        definition=details.definition or '')
-                    subsets.append(subset)
-            logger.info('   ... Done')
+                subset = self.load_subset(subset_name, term.ontology.name, session)
+                subsets.append(subset) if subset else None
+            logger.info('... Done')
         return subsets
+
+    def load_subset(self, subset_name, ontology_name, session):
+        logger.debug(' Processing subset %s', subset_name)
+        search = self.__call_client('search', query=subset_name, filters={'ontology': ontology_name,
+                                                                          'type': 'property'})
+        if search and len(search) == 1:
+            details = self.__call_client('detail', search[0])
+            if details:
+                subset_def = details.definition or details.annotation.get('comment', [''])[0] or subset_name
+                if not subset_def:
+                    logger.warning('Subset %s has no definition (%s)', subset_name, ontology_name)
+                subset, created = get_one_or_create(Subset, session,
+                                                    name=subset_name,
+                                                    definition=subset_def)
+                return subset
+            else:
+                logger.warning('Unable to retrieve subset details %s (%s)', subset_name, ontology_name)
+        else:
+            logger.warning('Unable to retrieve subset %s (%s)', subset_name, ontology_name)
+        return None
 
     def load_term_relations(self, m_term, o_term, relation_types, session):
         # remove previous relationships
         if self.options.get('wipe') is True:
             session.query(Relation).filter(Relation.child_term == m_term).delete()
             session.query(Relation).filter(Relation.parent_term == m_term).delete()
-
+        logger.debug('Terms relations to load %s', relation_types)
         n_relations = 0
         for rel_name in relation_types:
             # updates relation types
@@ -278,16 +270,17 @@ class OlsLoader(object):
                                                        session,
                                                        name=self.__relation_map.get(rel_name, rel_name))
 
-            logger.info('   Loading %s relation %s (%s)...', m_term.accession, rel_name, relation_type.name)
-            logger.info('   %s related terms ', len(o_relatives))
+            logger.info('Loading %s relation %s (%s)...', m_term.accession, rel_name, relation_type.name)
+            logger.info('%s related terms ', len(o_relatives))
             for o_related in o_relatives:
-                if o_related.accession is not None and o_related.ontology_name in self.allowed_ontologies:
+                r_accession = o_related.obo_id or o_related.short_form.replace('_', ':') or o_related.annotation.id[0]
+                if r_accession is not None and o_related.ontology_name in self.allowed_ontologies:
 
-                    logger.debug('  Term is defined in another ontology: %s', o_related.ontology_name)
+                    logger.info('Related term is defined in another ontology: %s', o_related.ontology_name)
                     o_term_details = self.client.term(o_related.iri,
                                                       silent=True,
                                                       unique=True) if not o_related.is_defining_ontology else o_related
-                    if o_term_details is not None:
+                    if o_term_details and o_term_details.ontology_name in self.allowed_ontologies:
                         o_onto_details = self.__call_client('ontology', o_term_details.ontology_name)
 
                         r_ontology, created = get_one_or_create(Ontology,
@@ -299,8 +292,7 @@ class OlsLoader(object):
                                                                     title=o_onto_details.title))
                         m_related, created = get_one_or_create(Term,
                                                                session,
-                                                               accession=o_term_details.obo_id or
-                                                                         o_term_details.short_form.replace('_', ':'),
+                                                               accession=r_accession,
                                                                create_method_kwargs=dict(
                                                                    helper=o_term_details,
                                                                    ontology=r_ontology,
@@ -322,14 +314,17 @@ class OlsLoader(object):
                         logger.info('Loaded relation %s %s %s', m_term.accession, relation_type.name,
                                     m_related.accession)
                     else:
-                        logger.error('Unable to find term %s defined in %s', o_related.iri, o_related.ontology_name)
+                        logger.warning('Term %s (%s) relation %s with %s not found in %s ',
+                                     m_term.accession, m_term.ontology.name,
+                                     self.__relation_map.get(rel_name, rel_name),
+                                     o_related.iri, o_related.ontology_name)
                 else:
                     logger.info('Ignored related %s', o_related)
-            logger.info('   ... Done (%s)', n_relations)
+            logger.info('... Done (%s)', n_relations)
         return n_relations
 
     def load_term_synonyms(self, m_term, o_term, session):
-        logger.info('   Loading term synonyms...')
+        logger.info('Loading term synonyms...')
         if self.options.get('wipe') is True:
             session.query(Synonym).filter(Synonym.term == m_term).delete()
         n_synonyms = 0
@@ -337,7 +332,7 @@ class OlsLoader(object):
         obo_synonyms = o_term.obo_synonym or []
         for synonym in obo_synonyms:
             if isinstance(synonym, dict):
-                logger.info('   Term obo synonym %s - %s', synonym['name'], self.__synonym_map[synonym['scope']])
+                logger.info('Term obo synonym %s - %s', synonym['name'], self.__synonym_map[synonym['scope']])
                 db_xref = synonym['xrefs'][0]['database'] + ':' + synonym['xrefs'][0]['id'] \
                     if 'xrefs' in synonym and len(synonym['xrefs']) > 0 else ''
                 m_syno, created = get_one_or_create(Synonym,
@@ -351,11 +346,11 @@ class OlsLoader(object):
         # OBO Xref are winning against standard synonymz
         synonyms = o_term.synonyms or []
         for synonym in synonyms:
-            logger.info('   Term synonym %s - EXACT - No dbXref', synonym)
+            logger.info('Term synonym %s - EXACT - No dbXref', synonym)
             m_syno, created = get_one_or_create(Synonym,
                                                 session,
                                                 term=m_term, name=synonym, type='EXACT')
             n_synonyms += 1 if created else 0
 
-        logger.info('   ... Done')
+        logger.info('... Done')
         return n_synonyms
