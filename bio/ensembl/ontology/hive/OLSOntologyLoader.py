@@ -26,13 +26,18 @@ class OLSOntologyLoader(OLSHiveLoader):
 
     def run(self):
         # False => erreur marque le job en failed, i.e pas de retry
-        logger.debug('OlsOntology Loader ')
         self.input_job.transient_error = False
-        # TODO add default options
+        logger.info('Loading ontology info %s', self.param_required('ontology_name'))
+        if self.param_required('wipe_one') == 1:
+            self.ols_loader.wipe_ontology(self.param_required('ontology_name'))
+
         with dal.session_scope() as session:
+
             m_ontology = self.ols_loader.load_ontology(self.param_required('ontology_name'))
             session.add(m_ontology)
-            self.dataflow({'nb_terms': m_ontology.number_of_terms})
+            self.dataflow({'nb_terms': m_ontology.number_of_terms,
+                           'ontology_name': self.param_required('ontology_name')
+                           })
 
     def write_output(self):
-        pass
+        logger.info('Ontology %s done...', self.param_required('ontology_name'))

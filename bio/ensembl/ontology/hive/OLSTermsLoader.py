@@ -17,18 +17,28 @@ import logging
 from os.path import join
 from urllib import parse
 
+logger = logging.getLogger(__name__)
 
 from .OLSHiveLoader import OLSHiveLoader
 
 
-class OLSTemsLoader(OLSHiveLoader):
+class OLSTermsLoader(OLSHiveLoader):
     """ OLS MySQL loader runnable class for eHive integration """
 
     def run(self):
         # False => erreur marque le job en failed, i.e pas de retry
         self.input_job.transient_error = False
         # TODO add default options
-        self.ols_loader.load_ter(self.param_required('ontology_name'))
+        logger.info('Loading %s ontology terms [%s..%s]',
+                    self.param_required('ontology_name'),
+                    self.param_required('_start_term_index'),
+                    self.param_required('_end_term_index'))
+        self.ols_loader.load_ontology_terms(self.param_required('ontology_name'),
+                                            start=self.param_required('_start_term_index'),
+                                            end=self.param_required('_end_term_index'))
 
     def write_output(self):
-        pass
+        logger.info('Done %s ontology terms [%s..%s]',
+                    self.param_required('ontology_name'),
+                    self.param_required('_start_term_index'),
+                    self.param_required('_end_term_index'))

@@ -12,11 +12,13 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+import os
 import logging
-
-import eHive
 from os.path import join
 from urllib import parse
+
+import eHive
+
 from bio.ensembl.ontology.loader import OlsLoader
 
 
@@ -24,6 +26,7 @@ class OLSHiveLoader(eHive.BaseRunnable):
     """ OLS MySQL loader runnable class for eHive integration """
     db_base_name = 'ensembl_ontology'
     log_levels = [
+        logging.FATAL,
         logging.ERROR,
         logging.WARNING,
         logging.INFO,
@@ -53,17 +56,16 @@ class OLSHiveLoader(eHive.BaseRunnable):
             assert db_url_parts.port != ''
             assert db_url_parts.username != ''
             assert db_url_parts.password != ''
-
+        os.makedirs(self.param_required('output_dir'), exist_ok=True)
         logging.basicConfig(level=self.log_levels[self.param('verbosity')],
                             format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
                             datefmt='%m-%d %H:%M - %s',
                             filename=join(self.param_required('output_dir'),
                                           self.log_file % self.param_required('ontology_name')),
-                            filemode='w')
+                            filemode='w+')
         self.ols_loader = OlsLoader(self.param_required('db_url'), **options)
         self.ols_loader.init_meta()
         assert self.param_required('ontology_name') in self.ols_loader.allowed_ontologies
-
 
     def run(self):
         raise RuntimeError('This class is not meant to be an actual Hive Wrapper')

@@ -23,7 +23,7 @@ from bio.ensembl.ontology.loader import OlsLoader
 from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
                     datefmt='%m-%d %H:%M - %s')
 
@@ -107,14 +107,12 @@ class TestLoading(unittest.TestCase):
         self.loader.options['wipe'] = True
         with dal.session_scope() as session:
             o_ontology = self.client.ontology(ontology_name)
-            self.loader._ontology_meta(o_ontology, session)
-        m_ontology = self.loader.load_all(ontology_name)
-        self.assertTrue(m_ontology)
+            m_ontology = self.loader.load_ontology(ontology_name)
+            session.add(m_ontology)
+            self.assertIsInstance(m_ontology, Ontology)
         session = dal.get_session()
         meta_file_date = session.query(Meta).filter_by(meta_key=ontology_name + '_file_date').one()
-        meta_time = session.query(Meta).filter_by(meta_key=ontology_name + '_load_time').one()
         meta_start = session.query(Meta).filter_by(meta_key=ontology_name + '_load_date').one()
-        self.assertTrue(float(meta_time.meta_value) > 0)
         self.assertTrue(
             datetime.datetime.strptime(meta_start.meta_value, ontology_name.upper() + "/%c") < datetime.datetime.now())
         logger.debug('meta load_all date: %s', meta_start)
