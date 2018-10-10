@@ -229,6 +229,7 @@ class TestLoading(unittest.TestCase):
             term = helpers.Term(ontology_name='go', iri='http://purl.obolibrary.org/obo/GO_0099565')
             o_term = self.client.detail(term)
             m_term = self.loader.load_term(o_term, 'go', session)
+            session.add(m_term)
             subsets = session.query(Subset).all()
             for subset in subsets:
                 self.assertIsNotNone(subset.definition)
@@ -242,4 +243,5 @@ class TestLoading(unittest.TestCase):
             term = helpers.Term(ontology_name='go', iri='http://purl.obolibrary.org/obo/GO_0005261')
             o_term = self.client.detail(term)
             m_term = self.loader.load_term(o_term, 'go', session)
+            session.add(m_term)
             self.assertGreaterEqual(len(m_term.alt_ids), 2)
