@@ -128,7 +128,7 @@ class OlsLoader(object):
                                                     namespace=namespace or o_ontology.namespace,
                                                     create_method_kwargs={'helper': o_ontology})
             logger.info('Loaded ontology %s', m_ontology)
-            return session.merge(m_ontology)
+            return m_ontology
 
     @staticmethod
     def wipe_ontology(ontology_name):
@@ -196,6 +196,7 @@ class OlsLoader(object):
             m_ontology = Ontology(helper=ontology)
         else:
             raise RuntimeError('Wrong parameter')
+        session.add(m_ontology)
         m_term, created = get_one_or_create(Term,
                                             session,
                                             accession=o_term.obo_id,
@@ -275,11 +276,11 @@ class OlsLoader(object):
             for o_related in o_relatives:
                 r_accession = o_related.obo_id or o_related.short_form.replace('_', ':') or o_related.annotation.id[0]
                 if r_accession is not None and o_related.ontology_name in self.allowed_ontologies:
-
-                    logger.info('Related term is defined in another ontology: %s', o_related.ontology_name)
-                    o_term_details = self.client.term(o_related.iri,
-                                                      silent=True,
-                                                      unique=True) if not o_related.is_defining_ontology else o_related
+                    if not o_related.is_defining_ontology:
+                        logger.info('Related term is defined in another ontology: %s', o_related.ontology_name)
+                        o_term_details = self.__call_client('term', o_related.iri, silent=True, unique=True)
+                    else:
+                        o_term_details = o_related
                     if o_term_details and o_term_details.ontology_name in self.allowed_ontologies:
                         o_onto_details = self.__call_client('ontology', o_term_details.ontology_name)
 
@@ -315,9 +316,9 @@ class OlsLoader(object):
                                     m_related.accession)
                     else:
                         logger.warning('Term %s (%s) relation %s with %s not found in %s ',
-                                     m_term.accession, m_term.ontology.name,
-                                     self.__relation_map.get(rel_name, rel_name),
-                                     o_related.iri, o_related.ontology_name)
+                                       m_term.accession, m_term.ontology.name,
+                                       self.__relation_map.get(rel_name, rel_name),
+                                       o_related.iri, o_related.ontology_name)
                 else:
                     logger.info('Ignored related %s', o_related)
             logger.info('... Done (%s)', n_relations)

@@ -13,13 +13,13 @@
    limitations under the License.
 """
 import datetime
+import logging
 import unittest
 import warnings
-import logging
 
 import ebi.ols.api.helpers as helpers
-from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader import OlsLoader
+from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
 
@@ -200,17 +200,17 @@ class TestLoading(unittest.TestCase):
             m_ontology = self.loader.load_ontology('bto')
             session.add(m_ontology)
             list_go = ['GO_0019953', 'GO_0019954', 'GO_0022414', 'GO_0032504', 'GO_0032505', 'GO_0061887',
-                           'GO_0000228', 'GO_0000003', 'GO_0031981', 'GO_0000176', 'GO_0000228', 'GO_0005654',
-                           'GO_0005730', 'GO_0031595', 'GO_0034399', 'GO_0097356', 'GO_1990934', 'GO_2000241',
-                           'GO_2000242', 'GO_2000243']
-            list_bto = ['BTO_000000%s' % i for i in range(0,10)]
+                       'GO_0000228', 'GO_0000003', 'GO_0031981', 'GO_0000176', 'GO_0000228', 'GO_0005654',
+                       'GO_0005730', 'GO_0031595', 'GO_0034399', 'GO_0097356', 'GO_1990934', 'GO_2000241',
+                       'GO_2000242', 'GO_2000243']
+            list_bto = ['BTO_000000%s' % i for i in range(0, 10)]
 
             for s_term in list_bto:
                 term = helpers.Term(ontology_name='bto', iri='http://purl.obolibrary.org/obo/' + s_term)
                 o_term = self.client.detail(term)
                 m_term = self.loader.load_term(o_term, m_ontology, session)
                 session.add(m_term)
-                self.assertGreaterEqual(len(m_term.parent_terms), 0 )
+                self.assertGreaterEqual(len(m_term.parent_terms), 0)
 
     def testRelationOtherOntology(self):
         with dal.session_scope() as session:
@@ -234,14 +234,14 @@ class TestLoading(unittest.TestCase):
             for subset in subsets:
                 self.assertIsNotNone(subset.definition)
 
-            subset = helpers.Property(ontology_name='go', iri='http://www.geneontology.org/formats/oboInOwl#hasBroadSynonym')
+            subset = helpers.Property(ontology_name='go',
+                                      iri='http://www.geneontology.org/formats/oboInOwl#hasBroadSynonym')
             details = self.client.detail(subset)
             self.assertIsNone(details.definition, '')
 
     def testAltIds(self):
         with dal.session_scope() as session:
-            term = helpers.Term(ontology_name='go', iri='http://purl.obolibrary.org/obo/GO_0005261')
-            o_term = self.client.detail(term)
+            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/GO_0005261', unique=True, silent=True)
             m_term = self.loader.load_term(o_term, 'go', session)
             session.add(m_term)
             self.assertGreaterEqual(len(m_term.alt_ids), 2)

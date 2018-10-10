@@ -69,7 +69,7 @@ class DataAccessLayer:
             logger.debug('Commit session')
         except Exception as e:
             session.rollback()
-            logger.exception('Error in session %s', e)
+            logger.error('Rollback session %s', e)
             raise
         finally:
             session.close()
