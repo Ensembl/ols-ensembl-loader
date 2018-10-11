@@ -98,16 +98,14 @@ class OlsLoader(object):
                 logger.debug('Calling client.%s(%s)(%s)', method, args, kwargs)
                 return self.client.__getattribute__(method)(*args, **kwargs)
             except (ConnectionError, CoreAPIException) as e:
-                logger.error('Client call error (%s) for %s(%s)(%s): %s ', self.current_ontology, method, args, kwargs,
-                             e)
+                logger.error('Client call error (%s) for %s(%s)(%s): %s ',
+                             self.current_ontology, method, args, kwargs, e)
                 # wait 5 seconds until next OLS api client try
                 time.sleep(5)
                 retry += 1
                 if retry >= max_retry:
                     logger.fatal('Max API retry for %s(%s)(%s)', method, args, kwargs)
                     raise e
-                else:
-                    self.__call_client(method, args, kwargs)
 
     def load_ontology(self, ontology_name, namespace=None):
         self.current_ontology = ontology_name
@@ -119,7 +117,7 @@ class OlsLoader(object):
                               meta_key=ontology_name + '_load_date',
                               create_method_kwargs=dict(
                                   meta_value=ontology_name.upper() + '/' + start.strftime('%c')))
-            o_ontology = self.__call_client('ontology', ontology_name)
+            o_ontology = self.__call_client('ontology', identifier=ontology_name)
             get_one_or_create(Meta,
                               session,
                               meta_key=o_ontology.ontology_id + '_file_date',
@@ -158,11 +156,11 @@ class OlsLoader(object):
             if type(ontology) is str:
                 m_ontology = self.load_ontology(ontology)
                 session.add(m_ontology)
-                o_ontology = self.__call_client('ontology', ontology)
+                o_ontology = self.__call_client('ontology', identifier=ontology)
             elif isinstance(ontology, Ontology):
                 m_ontology = ontology
                 # session.add(m_ontology)
-                o_ontology = self.__call_client('ontology', ontology.name)
+                o_ontology = self.__call_client('ontology', identifier=ontology.name)
             elif isinstance(ontology, helpers.Ontology):
                 m_ontology = Ontology(helper=ontology)
                 o_ontology = ontology
@@ -171,9 +169,7 @@ class OlsLoader(object):
             terms = o_ontology.terms()
             logger.info('Loading %s terms for %s', len(terms), m_ontology.name)
             if start and end:
-                logger.warning('Getting slice ! %s %s', start, end)
                 terms = terms[start:end]
-
             for o_term in terms:
                 if o_term.is_defining_ontology and o_term.obo_id:
                     logger.debug('Loaded term (from OLS) %s', o_term)
@@ -245,7 +241,8 @@ class OlsLoader(object):
         search = self.__call_client('search', query=subset_name, filters={'ontology': ontology_name,
                                                                           'type': 'property'})
         if search and len(search) == 1:
-            details = self.__call_client('detail', search[0])
+            prop = helpers.Property(ontology_name=ontology_name, iri=search[0].iri)
+            details = self.__call_client('detail', prop, unique=True, silent=True)
             if details:
                 subset_def = details.definition or details.annotation.get('comment', [''])[0] or subset_name
                 if not subset_def:
@@ -281,50 +278,55 @@ class OlsLoader(object):
                 r_accession = o_related.obo_id or o_related.short_form.replace('_', ':') or o_related.annotation.id[0]
                 if r_accession is not None and o_related.ontology_name in self.allowed_ontologies:
                     if not o_related.is_defining_ontology:
-                        logger.info('Related term is defined in another ontology: %s', o_related.ontology_name)
-                        o_term_details = self.__call_client('term', o_related.iri, silent=True, unique=True)
+                        logger.info('Related term is defined in another ontology')
+                        o_term_details = self.__call_client('term', identifier=o_related.iri, silent=True, unique=True)
                     else:
+                        logger.info('Related term is defined in SAME ontology')
                         o_term_details = o_related
-                    if o_term_details and o_term_details.ontology_name in self.allowed_ontologies:
-                        o_onto_details = self.__call_client('ontology', o_term_details.ontology_name)
 
-                        r_ontology, created = get_one_or_create(Ontology,
-                                                                session,
-                                                                name=o_onto_details.ontology_id,
-                                                                namespace=o_related.obo_name_space,
-                                                                create_method_kwargs=dict(
-                                                                    version=o_onto_details.version,
-                                                                    title=o_onto_details.title))
-                        m_related, created = get_one_or_create(Term,
-                                                               session,
-                                                               accession=r_accession,
-                                                               create_method_kwargs=dict(
-                                                                   helper=o_term_details,
-                                                                   ontology=r_ontology,
-                                                               ))
-                        # hack to reverse OBO loading behavior
-                        if rel_name == 'children':
-                            parent_term = m_term
-                            child_term = m_related
+                    if o_term_details:
+                        if o_term_details.ontology_name in self.allowed_ontologies:
+                            o_onto_details = self.__call_client('ontology', identifier=o_term_details.ontology_name)
+
+                            r_ontology, created = get_one_or_create(Ontology,
+                                                                    session,
+                                                                    name=o_onto_details.ontology_id,
+                                                                    namespace=o_related.obo_name_space,
+                                                                    create_method_kwargs=dict(
+                                                                        version=o_onto_details.version,
+                                                                        title=o_onto_details.title))
+                            m_related, created = get_one_or_create(Term,
+                                                                   session,
+                                                                   accession=r_accession,
+                                                                   create_method_kwargs=dict(
+                                                                       helper=o_term_details,
+                                                                       ontology=r_ontology,
+                                                                   ))
+                            # hack to reverse OBO loading behavior
+                            if rel_name == 'children':
+                                parent_term = m_term
+                                child_term = m_related
+                            else:
+                                parent_term = m_related
+                                child_term = m_term
+                            relation, r_created = get_one_or_create(Relation,
+                                                                    session,
+                                                                    parent_term=parent_term,
+                                                                    child_term=child_term,
+                                                                    relation_type=relation_type,
+                                                                    ontology=m_term.ontology)
+                            n_relations += 1 if r_created else 0
+                            logger.info('Loaded relation %s %s %s', m_term.accession, relation_type.name,
+                                        m_related.accession)
                         else:
-                            parent_term = m_related
-                            child_term = m_term
-                        relation, r_created = get_one_or_create(Relation,
-                                                                session,
-                                                                parent_term=parent_term,
-                                                                child_term=child_term,
-                                                                relation_type=relation_type,
-                                                                ontology=m_term.ontology)
-                        n_relations += 1 if r_created else 0
-                        logger.info('Loaded relation %s %s %s', m_term.accession, relation_type.name,
-                                    m_related.accession)
+                            logger.info('Ignored related %s (%s)', o_term_details.accession,
+                                        o_term_details.ontology_name)
                     else:
-                        if o_related.ontology_name in self.allowed_ontologies:
-                            logger.warning('Term %s (%s) relation %s with %s not found in %s ',
-                                           m_term.accession, m_term.ontology.name,
-                                           self.__relation_map.get(rel_name, rel_name),
-                                           o_related.iri, o_related.ontology_name)
-                        logger.info('Ignored related %s (%s)', o_term_details, o_term_details.ontology_name)
+                        logger.warning('Term %s (%s) relation %s with %s not found in %s ',
+                                       m_term.accession, m_term.ontology.name,
+                                       self.__relation_map.get(rel_name, rel_name),
+                                       o_related.iri, o_related.ontology_name)
+
                 else:
                     logger.info('Ignored related %s (%s)', o_related, o_related.ontology_name)
             logger.info('... Done (%s)', n_relations)

@@ -245,3 +245,14 @@ class TestLoading(unittest.TestCase):
             m_term = self.loader.load_term(o_term, 'go', session)
             session.add(m_term)
             self.assertGreaterEqual(len(m_term.alt_ids), 2)
+
+    def testTrickTerm(self):
+        with dal.session_scope() as session:
+            # o_term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0001330')
+            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/FYPO_0001330', unique=True, silent=True)
+            m_term = self.loader.load_term(o_term, 'fypo', session)
+            session.add(m_term)
+            found = False
+            for child in m_term.child_terms:
+                found = found or (child.parent_term.accession == 'CHEBI:24431')
+        self.assertTrue(found)
