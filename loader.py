@@ -4,8 +4,8 @@ import logging
 import os
 import sys
 from bio.ensembl.ontology.loader import OlsLoader
-from bio.ensembl.ontology.db import dal
-# allow loader.py to be run from any path
+from bio.ensembl.ontology.loader.db import dal
+# allow ols.py to be run from any path
 os.chdir(os.path.normpath(os.path.join(os.path.abspath(__file__), os.pardir)))
 
 logging.basicConfig(level=logging.INFO,
@@ -39,15 +39,15 @@ if __name__ == "__main__":
     logger.debug('Db Url set to %s', db_url)
     options = {'drop': not arguments.keep, 'echo': arguments.verbose}
     logger.debug('Loader arguments %s %s ', db_url, options)
+    loader = OlsLoader(db_url, **options)
 
     if not arguments.keep:
-        logger.info('Wiping database %s', arguments.ontology)
-        #TODO remove all tables in schema
-        dal.wipe_schema(db_url)
-        logger.info('Database reset %s', arguments.ontology)
-    loader = OlsLoader(db_url, **options)
-    loader.wipe_ontology(ontology_name=arguments.ontology)
-    logger.info('...Done')
+        logger.info('Wiping %s ontology', arguments.ontology)
+        loader.wipe_ontology(ontology_name=arguments.ontology)
+        logger.info('Ontology %s reset', arguments.ontology)
     logger.info('Loading ontology %s', arguments.ontology)
-    loader.load_all(arguments.ontology)
+    with dal.session_scope() as session:
+        m_ontology = loader.load_ontology(arguments.ontology)
+        session.add(m_ontology)
+        n_terms = loader.load_ontology_terms(m_ontology)
     logger.info('...Done')

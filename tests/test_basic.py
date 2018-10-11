@@ -13,16 +13,17 @@
    limitations under the License.
 """
 import datetime
+import logging
 import unittest
 import warnings
 
 import ebi.ols.api.helpers as helpers
-from bio.ensembl.ontology.db import *
 from bio.ensembl.ontology.loader import OlsLoader
-from bio.ensembl.ontology.models import *
+from bio.ensembl.ontology.loader.db import *
+from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
                     datefmt='%m-%d %H:%M - %s')
 
@@ -59,6 +60,7 @@ class TestLoading(unittest.TestCase):
             m_ontology = self.loader.load_ontology(ontology_name)
             session.add(m_ontology)
             logger.info('Loaded ontology %s', m_ontology)
+            logger.info('number of Terms %s', m_ontology.number_of_terms)
             r_ontology = session.query(Ontology).filter_by(name=ontology_name,
                                                            namespace=m_ontology.namespace).one()
             logger.info('(RE) Loaded ontology %s', r_ontology)
@@ -102,14 +104,15 @@ class TestLoading(unittest.TestCase):
     @ignore_warnings
     def testLoadTimeMeta(self):
         ontology_name = 'bfo'
-        self.loader.options['wipe'] = False
-        m_ontology = self.loader.load_all(ontology_name)
-        self.assertTrue(m_ontology)
+        self.loader.options['wipe'] = True
+        with dal.session_scope() as session:
+            o_ontology = self.client.ontology(ontology_name)
+            m_ontology = self.loader.load_ontology(ontology_name)
+            session.add(m_ontology)
+            self.assertIsInstance(m_ontology, Ontology)
         session = dal.get_session()
         meta_file_date = session.query(Meta).filter_by(meta_key=ontology_name + '_file_date').one()
-        meta_time = session.query(Meta).filter_by(meta_key=ontology_name + '_load_time').one()
         meta_start = session.query(Meta).filter_by(meta_key=ontology_name + '_load_date').one()
-        self.assertTrue(float(meta_time.meta_value) > 0)
         self.assertTrue(
             datetime.datetime.strptime(meta_start.meta_value, ontology_name.upper() + "/%c") < datetime.datetime.now())
         logger.debug('meta load_all date: %s', meta_start)
@@ -197,17 +200,17 @@ class TestLoading(unittest.TestCase):
             m_ontology = self.loader.load_ontology('bto')
             session.add(m_ontology)
             list_go = ['GO_0019953', 'GO_0019954', 'GO_0022414', 'GO_0032504', 'GO_0032505', 'GO_0061887',
-                           'GO_0000228', 'GO_0000003', 'GO_0031981', 'GO_0000176', 'GO_0000228', 'GO_0005654',
-                           'GO_0005730', 'GO_0031595', 'GO_0034399', 'GO_0097356', 'GO_1990934', 'GO_2000241',
-                           'GO_2000242', 'GO_2000243']
-            list_bto = ['BTO_000000%s' % i for i in range(0,10)]
+                       'GO_0000228', 'GO_0000003', 'GO_0031981', 'GO_0000176', 'GO_0000228', 'GO_0005654',
+                       'GO_0005730', 'GO_0031595', 'GO_0034399', 'GO_0097356', 'GO_1990934', 'GO_2000241',
+                       'GO_2000242', 'GO_2000243']
+            list_bto = ['BTO_000000%s' % i for i in range(0, 10)]
 
             for s_term in list_bto:
                 term = helpers.Term(ontology_name='bto', iri='http://purl.obolibrary.org/obo/' + s_term)
                 o_term = self.client.detail(term)
                 m_term = self.loader.load_term(o_term, m_ontology, session)
                 session.add(m_term)
-                self.assertGreaterEqual(len(m_term.parent_terms), 0 )
+                self.assertGreaterEqual(len(m_term.parent_terms), 0)
 
     def testRelationOtherOntology(self):
         with dal.session_scope() as session:
@@ -220,3 +223,36 @@ class TestLoading(unittest.TestCase):
             self.assertEqual(2, session.query(Ontology).count())
             term = session.query(Term).filter_by(accession='BTO:0000164')
             self.assertEqual(1, term.count())
+
+    def testSubsets(self):
+        with dal.session_scope() as session:
+            term = helpers.Term(ontology_name='go', iri='http://purl.obolibrary.org/obo/GO_0099565')
+            o_term = self.client.detail(term)
+            m_term = self.loader.load_term(o_term, 'go', session)
+            session.add(m_term)
+            subsets = session.query(Subset).all()
+            for subset in subsets:
+                self.assertIsNotNone(subset.definition)
+
+            subset = helpers.Property(ontology_name='go',
+                                      iri='http://www.geneontology.org/formats/oboInOwl#hasBroadSynonym')
+            details = self.client.detail(subset)
+            self.assertIsNone(details.definition, '')
+
+    def testAltIds(self):
+        with dal.session_scope() as session:
+            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/GO_0005261', unique=True, silent=True)
+            m_term = self.loader.load_term(o_term, 'go', session)
+            session.add(m_term)
+            self.assertGreaterEqual(len(m_term.alt_ids), 2)
+
+    def testTrickTerm(self):
+        with dal.session_scope() as session:
+            # o_term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0001330')
+            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/FYPO_0001330', unique=True, silent=True)
+            m_term = self.loader.load_term(o_term, 'fypo', session)
+            session.add(m_term)
+            found = False
+            for child in m_term.child_terms:
+                found = found or (child.parent_term.accession == 'CHEBI:24431')
+        self.assertTrue(found)
