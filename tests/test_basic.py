@@ -43,7 +43,8 @@ def ignore_warnings(test_func):
 
 class TestLoading(unittest.TestCase):
     _multiprocess_shared_ = False
-    db_url = 'sqlite://'
+    #db_url = 'sqlite://'
+    db_url = 'mysql+pymysql://marc:projet@localhost:3306/ols_ontology?charset=utf8'
 
     def setUp(self):
         dal.wipe_schema(self.db_url)
@@ -62,7 +63,7 @@ class TestLoading(unittest.TestCase):
             logger.info('Loaded ontology %s', m_ontology)
             logger.info('number of Terms %s', m_ontology.number_of_terms)
             r_ontology = session.query(Ontology).filter_by(name=ontology_name,
-                                                           namespace=m_ontology.namespace).one()
+                                                           namespace='').one()
             logger.info('(RE) Loaded ontology %s', r_ontology)
             self.assertEqual(m_ontology.name, r_ontology.name)
             self.assertEqual(m_ontology.version, r_ontology.version)
@@ -108,6 +109,7 @@ class TestLoading(unittest.TestCase):
         with dal.session_scope() as session:
             o_ontology = self.client.ontology(ontology_name)
             m_ontology = self.loader.load_ontology(ontology_name)
+            terms = self.loader.load_ontology_terms(ontology_name)
             session.add(m_ontology)
             self.assertIsInstance(m_ontology, Ontology)
         session = dal.get_session()

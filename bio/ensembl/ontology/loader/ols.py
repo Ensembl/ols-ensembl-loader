@@ -57,7 +57,7 @@ class OlsLoader(object):
     )
 
     allowed_ontologies = ['go', 'so', 'pato', 'hp', 'vt', 'efo', 'po', 'eo', 'to', 'chebi', 'pr', 'fypo', 'peco', 'bfo',
-                          'bto', 'cl', 'cmo', 'eco', 'mod', 'mp', 'ogms', 'uo']
+                          'bto', 'cl', 'cmo', 'eco', 'mod', 'mp', 'ogms', 'uo', 'mondo']
 
     def __init__(self, url, **options):
         self.db_url = url
@@ -107,7 +107,7 @@ class OlsLoader(object):
                     logger.fatal('Max API retry for %s(%s)(%s)', method, args, kwargs)
                     raise e
 
-    def load_ontology(self, ontology_name, namespace=None):
+    def load_ontology(self, ontology_name, namespace=''):
         self.current_ontology = ontology_name
         with dal.session_scope() as session:
             start = datetime.datetime.now()
@@ -127,7 +127,7 @@ class OlsLoader(object):
             m_ontology, created = get_one_or_create(Ontology,
                                                     session,
                                                     name=o_ontology.ontology_id,
-                                                    namespace=namespace or o_ontology.namespace,
+                                                    namespace=namespace,
                                                     create_method_kwargs={'helper': o_ontology})
             logger.info('Loaded ontology %s', m_ontology)
             return m_ontology
@@ -153,21 +153,9 @@ class OlsLoader(object):
     def load_ontology_terms(self, ontology, start=None, end=None):
         nb_terms = 0
         with dal.session_scope() as session:
-            if type(ontology) is str:
-                m_ontology = self.load_ontology(ontology)
-                session.add(m_ontology)
-                o_ontology = self.__call_client('ontology', identifier=ontology)
-            elif isinstance(ontology, Ontology):
-                m_ontology = ontology
-                # session.add(m_ontology)
-                o_ontology = self.__call_client('ontology', identifier=ontology.name)
-            elif isinstance(ontology, helpers.Ontology):
-                m_ontology = Ontology(helper=ontology)
-                o_ontology = ontology
-            else:
-                raise RuntimeError('Wrong parameter')
+            o_ontology = self.__call_client('ontology', identifier=ontology)
             terms = o_ontology.terms()
-            logger.info('Loading %s terms for %s', len(terms), m_ontology.name)
+            logger.info('Loading %s terms for %s', len(terms), o_ontology.ontology_id)
             if start and end:
                 terms = terms[start:end]
             for o_term in terms:
@@ -176,11 +164,11 @@ class OlsLoader(object):
                     logger.debug('Adding/Retrieving namespaced ontology %s', o_term.obo_name_space)
                     ontology, created = get_one_or_create(Ontology,
                                                           session,
-                                                          name=m_ontology.name,
-                                                          namespace=o_term.obo_name_space or m_ontology.name,
+                                                          name=o_ontology.ontology_id,
+                                                          namespace=o_term.obo_name_space or '',
                                                           create_method_kwargs=dict(
-                                                              version=m_ontology.version,
-                                                              title=m_ontology.title))
+                                                              version=o_ontology.version,
+                                                              title=o_ontology.title))
                     term = self.load_term(o_term, ontology, session)
                     session.add(term)
                     nb_terms += 1
