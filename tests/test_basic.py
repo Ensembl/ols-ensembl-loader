@@ -43,8 +43,7 @@ def ignore_warnings(test_func):
 
 class TestLoading(unittest.TestCase):
     _multiprocess_shared_ = False
-    # db_url = 'sqlite://'
-    db_url = 'mysql+pymysql://marc:projet@localhost:3306/ols_ontology?charset=utf8'
+    db_url = 'sqlite://'
 
     def setUp(self):
         dal.wipe_schema(self.db_url)
