@@ -43,7 +43,7 @@ def ignore_warnings(test_func):
 
 class TestLoading(unittest.TestCase):
     _multiprocess_shared_ = False
-    #db_url = 'sqlite://'
+    # db_url = 'sqlite://'
     db_url = 'mysql+pymysql://marc:projet@localhost:3306/ols_ontology?charset=utf8'
 
     def setUp(self):
@@ -251,10 +251,22 @@ class TestLoading(unittest.TestCase):
     def testTrickTerm(self):
         with dal.session_scope() as session:
             # o_term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0001330')
-            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/FYPO_0001330', unique=True, silent=True)
+            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/FYPO_0001330', unique=True,
+                                      silent=True)
             m_term = self.loader.load_term(o_term, 'fypo', session)
             session.add(m_term)
             found = False
             for child in m_term.child_terms:
                 found = found or (child.parent_term.accession == 'CHEBI:24431')
         self.assertTrue(found)
+
+    def testLoadSubsetLongDef(self):
+        # https://www.ebi.ac.uk/ols/api/ontologies/mondo/properties/http%253A%252F%252Fpurl.obolibrary.org%252Fobo%252Fmondo%2523prototype_pattern
+        with dal.session_scope() as session:
+            h_property = helpers.Property(ontology_name='mondo',
+                                        iri='http://purl.obolibrary.org/obo/mondo#prototype_pattern')
+            o_property = self.client.detail(h_property)
+            m_subset = self.loader.load_subset(subset_name=o_property.short_form,
+                                               ontology_name='mondo',
+                                               session=session)
+            self.assertGreaterEqual(len(m_subset.definition), 128)

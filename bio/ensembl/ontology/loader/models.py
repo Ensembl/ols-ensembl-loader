@@ -168,7 +168,7 @@ class Subset(LoadAble, Base):
 
     subset_id = Column(Integer, primary_key=True)
     name = Column(String(64, convert_unicode=True), nullable=False, unique=True)
-    definition = Column(String(128, convert_unicode=True), nullable=False, server_default=text("''"))
+    definition = Column(Unicode(1000), nullable=False, server_default=text("''"))
 
 
 class Term(LoadAble, Base):
