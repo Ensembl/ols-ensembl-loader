@@ -221,7 +221,7 @@ class TestLoading(unittest.TestCase):
             o_term = self.client.detail(term)
             m_term = self.loader.load_term(o_term, m_ontology, session)
             session.add(m_term)
-            self.assertEqual(2, session.query(Ontology).count())
+            self.assertGreaterEqual(session.query(Ontology).count(), 2)
             term = session.query(Term).filter_by(accession='BTO:0000164')
             self.assertEqual(1, term.count())
 
