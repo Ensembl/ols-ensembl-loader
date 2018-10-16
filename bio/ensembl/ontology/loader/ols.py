@@ -38,7 +38,7 @@ class OlsLoader(object):
         'derives_from/develops_from': 'develops_from'
     }
     __ignored_relations = [
-        'graph', 'jstree', 'descendants', 'ancestors', 'hierarchicalParents',  # 'parents',
+        'graph', 'jstree', 'descendants', 'ancestors', 'hierarchicalParents',  'children',
         'hierarchicalAncestors', 'hierarchicalChildren', 'hierarchicalDescendants'
     ]
 
@@ -201,8 +201,7 @@ class OlsLoader(object):
         return m_term
 
     def load_alt_ids(self, o_term, m_term, session):
-        if self.options.get('wipe') is True:
-            session.query(AltId).filter(AltId.term == m_term).delete()
+        session.query(AltId).filter(AltId.term == m_term).delete()
         for alt_id in o_term.annotation.has_alternative_id:
             logger.info('Loaded AltId %s', alt_id)
             get_one_or_create(AltId,
@@ -247,9 +246,9 @@ class OlsLoader(object):
 
     def load_term_relations(self, m_term, o_term, relation_types, session):
         # remove previous relationships
-        if self.options.get('wipe') is True:
-            session.query(Relation).filter(Relation.child_term == m_term).delete()
-            session.query(Relation).filter(Relation.parent_term == m_term).delete()
+        session.query(Relation).filter(Relation.child_term == m_term).delete()
+        # TODO check if parent should be removed as well
+        # session.query(Relation).filter(Relation.parent_term == m_term).delete()
         logger.debug('Terms relations to load %s', relation_types)
         n_relations = 0
         for rel_name in relation_types:
@@ -322,8 +321,7 @@ class OlsLoader(object):
 
     def load_term_synonyms(self, m_term, o_term, session):
         logger.info('Loading term synonyms...')
-        if self.options.get('wipe') is True:
-            session.query(Synonym).filter(Synonym.term == m_term).delete()
+        session.query(Synonym).filter(Synonym.term == m_term).delete()
         n_synonyms = 0
 
         obo_synonyms = o_term.obo_synonym or []
