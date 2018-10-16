@@ -279,7 +279,7 @@ class OlsLoader(object):
                             r_ontology, created = get_one_or_create(Ontology,
                                                                     session,
                                                                     name=o_onto_details.ontology_id,
-                                                                    namespace=o_related.obo_name_space,
+                                                                    namespace=o_term_details.obo_name_space or '',
                                                                     create_method_kwargs=dict(
                                                                         version=o_onto_details.version,
                                                                         title=o_onto_details.title))
