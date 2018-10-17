@@ -14,10 +14,10 @@
 """
 import datetime
 import logging
+import time
 from os import getenv
 
 import dateutil.parser
-import time
 from coreapi.exceptions import CoreAPIException
 from requests.exceptions import ConnectionError
 from sqlalchemy.orm.exc import NoResultFound
@@ -38,7 +38,7 @@ class OlsLoader(object):
         'derives_from/develops_from': 'develops_from'
     }
     __ignored_relations = [
-        'graph', 'jstree', 'descendants', 'ancestors', 'hierarchicalParents',  'children',
+        'graph', 'jstree', 'descendants', 'ancestors', 'hierarchicalParents', 'children',
         'hierarchicalAncestors', 'hierarchicalChildren', 'hierarchicalDescendants'
     ]
 
@@ -156,10 +156,14 @@ class OlsLoader(object):
             o_ontology = self.__call_client('ontology', identifier=ontology)
             terms = o_ontology.terms()
             logger.info('Loading %s terms for %s', len(terms), o_ontology.ontology_id)
-            if start and end:
+            if start is not None and end is not None:
+                logger.info('Loading terms slice [%s, %s]', start, end)
+                logger.info('-----------------------------------------')
                 terms = terms[start:end]
             for o_term in terms:
-                if o_term.is_defining_ontology and o_term.obo_id:
+                accession = o_term.obo_id or o_term.short_form.replace('_', ':') or o_term.annotation.id[0]
+                o_term.obo_id = accession
+                if o_term.is_defining_ontology and accession:
                     logger.debug('Loaded term (from OLS) %s', o_term)
                     logger.debug('Adding/Retrieving namespaced ontology %s', o_term.obo_name_space)
                     ontology, created = get_one_or_create(Ontology,
@@ -185,15 +189,17 @@ class OlsLoader(object):
         else:
             raise RuntimeError('Wrong parameter')
         session.add(m_ontology)
+        accession = o_term.obo_id or o_term.short_form.replace('_', ':') or o_term.annotation.id[0]
+        o_term.obo_id = accession
+
         m_term, created = get_one_or_create(Term,
                                             session,
-                                            accession=o_term.obo_id,
+                                            accession=accession,
                                             create_method_kwargs=dict(helper=o_term,
                                                                       ontology=m_ontology))
 
         logger.info('Loaded Term %s ...', m_term)
-        relation_types = [rel for rel in o_term.relations_types if rel not in self.__ignored_relations]
-        self.load_term_relations(m_term, o_term, relation_types, session)
+        self.load_term_relations(m_term, o_term, session)
         self.load_term_synonyms(m_term, o_term, session)
         self.load_alt_ids(o_term, m_term, session)
         self.load_term_subsets(m_term, session)
@@ -244,16 +250,16 @@ class OlsLoader(object):
             logger.warning('Unable to retrieve subset %s (%s)', subset_name, ontology_name)
         return None
 
-    def load_term_relations(self, m_term, o_term, relation_types, session):
+    def load_term_relations(self, m_term, o_term, session):
         # remove previous relationships
         session.query(Relation).filter(Relation.child_term == m_term).delete()
         # TODO check if parent should be removed as well
         # session.query(Relation).filter(Relation.parent_term == m_term).delete()
+        relation_types = [rel for rel in o_term.relations_types if rel not in self.__ignored_relations]
         logger.debug('Terms relations to load %s', relation_types)
         n_relations = 0
         for rel_name in relation_types:
             # updates relation types
-            o_term = helpers.Term(ontology_name=o_term.ontology_name, iri=m_term.iri)
             o_relatives = o_term.load_relation(rel_name)
             relation_type, created = get_one_or_create(RelationType,
                                                        session,
@@ -296,6 +302,7 @@ class OlsLoader(object):
                             else:
                                 parent_term = m_related
                                 child_term = m_term
+                            # TODO check if a reverse relationship exists, to avoid infinite loop ?
                             relation, r_created = get_one_or_create(Relation,
                                                                     session,
                                                                     parent_term=parent_term,

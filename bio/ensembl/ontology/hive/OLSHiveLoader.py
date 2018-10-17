@@ -31,7 +31,7 @@ class OLSHiveLoader(eHive.BaseRunnable):
         logging.INFO,
         logging.DEBUG
     ]
-    log_file = 'ols_loader_%s.log'
+    log_file = '%s_ontology.log'
     ols_loader = None
 
     def param_defaults(self):
@@ -57,8 +57,8 @@ class OLSHiveLoader(eHive.BaseRunnable):
             assert db_url_parts.password != ''
         os.makedirs(self.param_required('output_dir'), exist_ok=True)
         logging.basicConfig(level=self.log_levels[self.param('verbosity')],
-                            format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
-                            datefmt='%m-%d %H:%M - %s',
+                            format='%(asctime)s %(levelname)s: %(funcName)s(%(lineno)d) - %(message)s',
+                            datefmt='%m-%d %H:%M:%S',
                             filename=join(self.param_required('output_dir'),
                                           self.log_file % self.param_required('ontology_name')))
         self.ols_loader = OlsLoader(self.param_required('db_url'), **options)

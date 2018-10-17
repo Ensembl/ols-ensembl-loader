@@ -23,9 +23,9 @@ from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
-                    datefmt='%m-%d %H:%M - %s')
+                    datefmt='%m-%d %H:%M:%S')
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,8 @@ def ignore_warnings(test_func):
 
 class TestLoading(unittest.TestCase):
     _multiprocess_shared_ = False
-    db_url = 'sqlite://'
+    # db_url = 'sqlite://'
+    db_url = 'mysql+pymysql://marc:projet@localhost:3306/ensembl_ontology_96?charset=utf8'
 
     def setUp(self):
         dal.wipe_schema(self.db_url)
@@ -184,11 +185,11 @@ class TestLoading(unittest.TestCase):
         with dal.session_scope() as session:
             m_ontology = self.loader.load_ontology('fypo')
             session.add(m_ontology)
-            term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0000001')
+            term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0000257')
             o_term = self.client.detail(term)
             m_term = self.loader.load_term(o_term, m_ontology, session)
             session.commit()
-            self.assertGreaterEqual(len(m_term.parent_terms), 6)
+            self.assertGreaterEqual(len(m_term.child_terms), 4)
 
     @ignore_warnings
     def testOntologiesList(self):
@@ -269,3 +270,13 @@ class TestLoading(unittest.TestCase):
                                                ontology_name='mondo',
                                                session=session)
             self.assertGreaterEqual(len(m_subset.definition), 128)
+
+    def testLoopingRelations(self):
+        session = dal.get_session()
+        ontology_name = 'mondo'
+        expected = self.loader.load_ontology_terms(ontology_name, start=0, end=100)
+        logger.info('Expected terms %s', expected)
+        s_terms = session.query(Term).filter(Ontology.name == ontology_name)
+        inserted = s_terms.count()
+        logger.info('Inserted terms %s', inserted)
+        self.assertGreaterEqual(inserted, expected)
