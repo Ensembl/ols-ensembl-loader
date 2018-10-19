@@ -23,8 +23,8 @@ from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
 
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s %(levelname)s \t: %(module)s(%(lineno)d) - \t%(message)s',
                     datefmt='%m-%d %H:%M:%S')
 
 logger = logging.getLogger(__name__)
@@ -35,20 +35,21 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
 def ignore_warnings(test_func):
     def do_test(self, *args, **kwargs):
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", ResourceWarning)
+            warnings.simplefilter("ignore", Warning)
             test_func(self, *args, **kwargs)
 
     return do_test
 
 
-class TestLoading(unittest.TestCase):
+class TestOLSLoader(unittest.TestCase):
     _multiprocess_shared_ = False
     # db_url = 'sqlite://'
     db_url = 'mysql+pymysql://marc:projet@localhost:3306/ensembl_ontology_96?charset=utf8'
 
     def setUp(self):
         dal.wipe_schema(self.db_url)
-        self.loader = OlsLoader(self.db_url)
+        warnings.simplefilter("ignore", ResourceWarning)
+        self.loader = OlsLoader(self.db_url, echo=False)
         self.client = OlsClient()
 
     @ignore_warnings
@@ -63,13 +64,14 @@ class TestLoading(unittest.TestCase):
             logger.info('Loaded ontology %s', m_ontology)
             logger.info('number of Terms %s', m_ontology.number_of_terms)
             r_ontology = session.query(Ontology).filter_by(name=ontology_name,
-                                                           namespace='').one()
+                                                           namespace='cvdo').one()
             logger.info('(RE) Loaded ontology %s', r_ontology)
             self.assertEqual(m_ontology.name, r_ontology.name)
             self.assertEqual(m_ontology.version, r_ontology.version)
             assert isinstance(r_ontology, Ontology)
             # automatically create another one with another namespace
             new_ontology, created = get_one_or_create(Ontology,
+                                                      session,
                                                       name=r_ontology.name,
                                                       namespace='another_namespace')
 
@@ -134,7 +136,9 @@ class TestLoading(unittest.TestCase):
             session.add(m_ontology)
             session.add(m_ontology_2)
             session.add(m_ontology_3)
-            rel_type = RelationType(name='is_a')
+            rel_type, created = get_one_or_create(RelationType,
+                                                  session,
+                                                  name='is_a')
             for i in range(1, 5):
                 m_term = Term(accession='T:0000%s' % i, name='Term %s' % i, ontology=m_ontology)
                 m_term_2 = Term(accession='T2:0000%s' % i, name='Term %s' % i, ontology=m_ontology_2)
@@ -147,8 +151,8 @@ class TestLoading(unittest.TestCase):
                 alt_id = AltId(accession='ATL:000%s' % i)
                 m_term.alt_ids.append(alt_id)
                 session.add(alt_id)
-                session.add(m_term.add_child_relation(rel_type=rel_type, child_term=m_term_3, ontology=m_ontology))
-                session.add(m_term.add_parent_relation(rel_type=rel_type, parent_term=m_term_2, ontology=m_ontology_2))
+                m_term.add_child_relation(session=session, rel_type=rel_type, child_term=m_term_3)
+                m_term.add_parent_relation(session=session, rel_type=rel_type, parent_term=m_term_2)
                 closure_1 = Closure(child_term=m_term, parent_term=m_term_2, distance=1, ontology=m_ontology)
                 closure_2 = Closure(parent_term=m_term, child_term=m_term_3, distance=3, ontology=m_ontology_2)
                 closure_3 = Closure(parent_term=m_term_2, child_term=m_term_3, subparent_term=m_term, distance=2,
@@ -177,7 +181,7 @@ class TestLoading(unittest.TestCase):
         session.add(m_ontology)
         term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0005645')
         o_term = self.client.detail(term)
-        m_term = self.loader.load_term(o_term, m_ontology, session)
+        m_term = self.loader.load_term(o_term, m_ontology, session, False)
         self.assertIn('λ', m_term.description)
 
     @ignore_warnings
@@ -214,6 +218,7 @@ class TestLoading(unittest.TestCase):
                 session.add(m_term)
                 self.assertGreaterEqual(len(m_term.parent_terms), 0)
 
+    @ignore_warnings
     def testRelationOtherOntology(self):
         with dal.session_scope() as session:
             m_ontology = self.loader.load_ontology('efo')
@@ -226,6 +231,7 @@ class TestLoading(unittest.TestCase):
             term = session.query(Term).filter_by(accession='BTO:0000164')
             self.assertEqual(1, term.count())
 
+    @ignore_warnings
     def testSubsets(self):
         with dal.session_scope() as session:
             term = helpers.Term(ontology_name='go', iri='http://purl.obolibrary.org/obo/GO_0099565')
@@ -241,6 +247,7 @@ class TestLoading(unittest.TestCase):
             details = self.client.detail(subset)
             self.assertIsNone(details.definition, '')
 
+    @ignore_warnings
     def testAltIds(self):
         with dal.session_scope() as session:
             o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/GO_0005261', unique=True, silent=True)
@@ -248,29 +255,32 @@ class TestLoading(unittest.TestCase):
             session.add(m_term)
             self.assertGreaterEqual(len(m_term.alt_ids), 2)
 
+    @ignore_warnings
     def testTrickTerm(self):
         with dal.session_scope() as session:
             # o_term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0001330')
             o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/FYPO_0001330', unique=True,
                                       silent=True)
-            m_term = self.loader.load_term(o_term, 'fypo', session)
+            m_term = self.loader.load_term(o_term, 'fypo', session, False)
             session.add(m_term)
             found = False
             for child in m_term.child_terms:
                 found = found or (child.parent_term.accession == 'CHEBI:24431')
         self.assertTrue(found)
 
+    @ignore_warnings
     def testLoadSubsetLongDef(self):
         # https://www.ebi.ac.uk/ols/api/ontologies/mondo/properties/http%253A%252F%252Fpurl.obolibrary.org%252Fobo%252Fmondo%2523prototype_pattern
         with dal.session_scope() as session:
             h_property = helpers.Property(ontology_name='mondo',
-                                        iri='http://purl.obolibrary.org/obo/mondo#prototype_pattern')
+                                          iri='http://purl.obolibrary.org/obo/mondo#prototype_pattern')
             o_property = self.client.detail(h_property)
             m_subset = self.loader.load_subset(subset_name=o_property.short_form,
                                                ontology_name='mondo',
                                                session=session)
             self.assertGreaterEqual(len(m_subset.definition), 128)
 
+    @ignore_warnings
     def testLoopingRelations(self):
         session = dal.get_session()
         ontology_name = 'mondo'
@@ -280,3 +290,22 @@ class TestLoading(unittest.TestCase):
         inserted = s_terms.count()
         logger.info('Inserted terms %s', inserted)
         self.assertGreaterEqual(inserted, expected)
+
+    @ignore_warnings
+    def testRelatedNonExpected(self):
+        with dal.session_scope() as session:
+            ontology_name = 'eco'
+            expected = self.loader.load_ontology_terms(ontology_name, start=0, end=50)
+            logger.info('Expected terms %s', expected)
+            s_terms = session.query(Term).filter(Ontology.name == ontology_name)
+            inserted = s_terms.count()
+            logger.info('Inserted terms %s', inserted)
+            self.assertGreaterEqual(inserted, expected)
+
+    @ignore_warnings
+    def testRelationSingleTerm(self):
+        with dal.session_scope() as session:
+            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/ECO_0007571', unique=True, silent=True)
+            m_term = self.loader.load_term(o_term, 'eco', session)
+            session.add(m_term)
+            session.commit()

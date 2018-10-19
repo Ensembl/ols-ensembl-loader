@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 Session = sessionmaker()
 
-__all__ = ['dal', 'get_one_or_create']
+__all__ = ['dal']
 
 
 class DataAccessLayer:
@@ -76,35 +76,7 @@ class DataAccessLayer:
             logger.debug('Closing session')
 
 
-def get_one_or_create(model,
-                      session=None,
-                      create_method='',
-                      create_method_kwargs=None,
-                      **kwargs):
-    c_session = session or dal.get_session()
-    create_kwargs = create_method_kwargs or {}
-    try:
-        obj = c_session.query(model).filter_by(**kwargs).one()
-        logger.debug('Exists %s', obj)
-        if 'helper' in create_kwargs:
-            obj.update_from_helper(helper=create_kwargs.get('helper'))
-        else:
-            [setattr(obj, attribute, create_kwargs.get(attribute)) for attribute in create_kwargs if
-             attribute is not None]
-        logger.debug('Updated %s', obj)
-        return obj, False
-    except NoResultFound:
-        try:
-            create_kwargs.update(kwargs)
-            new_obj = getattr(model, create_method, model)(**create_kwargs)
-            c_session.add(new_obj)
-            c_session.commit()
-            logger.debug('Create %s', new_obj)
-            return new_obj, True
-        except IntegrityError:
-            logger.error('Integrity error upon flush')
-            c_session.rollback()
-            return c_session.query(model).filter_by(**kwargs).one(), False
-
-
 dal = DataAccessLayer()
+
+
+
