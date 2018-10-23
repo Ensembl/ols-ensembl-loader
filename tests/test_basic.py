@@ -43,8 +43,7 @@ def ignore_warnings(test_func):
 
 class TestOLSLoader(unittest.TestCase):
     _multiprocess_shared_ = False
-    # db_url = 'sqlite://'
-    db_url = 'mysql+pymysql://marc:projet@localhost:3306/ensembl_ontology_96?charset=utf8'
+    db_url = 'sqlite://'
 
     def setUp(self):
         dal.wipe_schema(self.db_url)
@@ -176,16 +175,21 @@ class TestOLSLoader(unittest.TestCase):
 
     @ignore_warnings
     def testEncodingTerm(self):
+        self.loader.options['process_relations'] = False
+        self.loader.options['process_parents'] = False
         session = dal.get_session()
         m_ontology = self.loader.load_ontology('fypo')
         session.add(m_ontology)
         term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0005645')
         o_term = self.client.detail(term)
-        m_term = self.loader.load_term(o_term, m_ontology, session, False)
+        m_term = self.loader.load_term(o_term, m_ontology, session)
         self.assertIn('λ', m_term.description)
 
     @ignore_warnings
     def testSingleTerm(self):
+        self.loader.options['process_relations'] = True
+        self.loader.options['process_parents'] = True
+
         with dal.session_scope() as session:
             m_ontology = self.loader.load_ontology('fypo')
             session.add(m_ontology)
@@ -220,6 +224,8 @@ class TestOLSLoader(unittest.TestCase):
 
     @ignore_warnings
     def testRelationOtherOntology(self):
+        self.loader.options['process_relations'] = True
+        self.loader.options['process_parents'] = True
         with dal.session_scope() as session:
             m_ontology = self.loader.load_ontology('efo')
             session.add(m_ontology)
@@ -233,6 +239,9 @@ class TestOLSLoader(unittest.TestCase):
 
     @ignore_warnings
     def testSubsets(self):
+        self.loader.options['process_relations'] = False
+        self.loader.options['process_parents'] = False
+
         with dal.session_scope() as session:
             term = helpers.Term(ontology_name='go', iri='http://purl.obolibrary.org/obo/GO_0099565')
             o_term = self.client.detail(term)
@@ -249,6 +258,9 @@ class TestOLSLoader(unittest.TestCase):
 
     @ignore_warnings
     def testAltIds(self):
+        self.loader.options['process_relations'] = False
+        self.loader.options['process_parents'] = False
+
         with dal.session_scope() as session:
             o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/GO_0005261', unique=True, silent=True)
             m_term = self.loader.load_term(o_term, 'go', session)
@@ -257,11 +269,14 @@ class TestOLSLoader(unittest.TestCase):
 
     @ignore_warnings
     def testTrickTerm(self):
+        self.loader.options['process_relations'] = True
+        self.loader.options['process_parents'] = True
+
         with dal.session_scope() as session:
             # o_term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0001330')
             o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/FYPO_0001330', unique=True,
                                       silent=True)
-            m_term = self.loader.load_term(o_term, 'fypo', session, False)
+            m_term = self.loader.load_term(o_term, 'fypo', session)
             session.add(m_term)
             found = False
             for child in m_term.child_terms:
@@ -270,6 +285,7 @@ class TestOLSLoader(unittest.TestCase):
 
     @ignore_warnings
     def testLoadSubsetLongDef(self):
+        self.loader.options['process_relations'] = False
         # https://www.ebi.ac.uk/ols/api/ontologies/mondo/properties/http%253A%252F%252Fpurl.obolibrary.org%252Fobo%252Fmondo%2523prototype_pattern
         with dal.session_scope() as session:
             h_property = helpers.Property(ontology_name='mondo',
@@ -309,3 +325,8 @@ class TestOLSLoader(unittest.TestCase):
             m_term = self.loader.load_term(o_term, 'eco', session)
             session.add(m_term)
             session.commit()
+
+    def testMissingSubset(self):
+        with dal.session_scope() as session:
+            subset = self.loader.load_subset('efo_slim', 'efo', session)
+            self.assertEqual(subset.definition, 'Efo slim')
