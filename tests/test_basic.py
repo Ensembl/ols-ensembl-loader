@@ -16,6 +16,7 @@ import datetime
 import logging
 import unittest
 import warnings
+from os import getenv
 
 import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.loader import OlsLoader
@@ -43,7 +44,7 @@ def ignore_warnings(test_func):
 
 class TestOLSLoader(unittest.TestCase):
     _multiprocess_shared_ = False
-    db_url = 'sqlite://'
+    db_url = getenv('DB_TEST_URL', 'sqlite://')
 
     def setUp(self):
         dal.wipe_schema(self.db_url)
@@ -209,18 +210,11 @@ class TestOLSLoader(unittest.TestCase):
         with dal.session_scope() as session:
             m_ontology = self.loader.load_ontology('bto')
             session.add(m_ontology)
-            list_go = ['GO_0019953', 'GO_0019954', 'GO_0022414', 'GO_0032504', 'GO_0032505', 'GO_0061887',
-                       'GO_0000228', 'GO_0000003', 'GO_0031981', 'GO_0000176', 'GO_0000228', 'GO_0005654',
-                       'GO_0005730', 'GO_0031595', 'GO_0034399', 'GO_0097356', 'GO_1990934', 'GO_2000241',
-                       'GO_2000242', 'GO_2000243']
-            list_bto = ['BTO_000000%s' % i for i in range(0, 10)]
-
-            for s_term in list_bto:
-                term = helpers.Term(ontology_name='bto', iri='http://purl.obolibrary.org/obo/' + s_term)
-                o_term = self.client.detail(term)
-                m_term = self.loader.load_term(o_term, m_ontology, session)
-                session.add(m_term)
-                self.assertGreaterEqual(len(m_term.parent_terms), 0)
+            term = helpers.Term(ontology_name='bto', iri='http://purl.obolibrary.org/obo/BTO_0000005')
+            o_term = self.client.detail(term)
+            m_term = self.loader.load_term(o_term, m_ontology, session)
+            session.add(m_term)
+            self.assertGreaterEqual(len(m_term.parent_terms), 0)
 
     @ignore_warnings
     def testRelationOtherOntology(self):
@@ -270,7 +264,7 @@ class TestOLSLoader(unittest.TestCase):
     @ignore_warnings
     def testTrickTerm(self):
         self.loader.options['process_relations'] = True
-        self.loader.options['process_parents'] = True
+        self.loader.options['process_parents'] = False
 
         with dal.session_scope() as session:
             # o_term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0001330')
@@ -279,8 +273,8 @@ class TestOLSLoader(unittest.TestCase):
             m_term = self.loader.load_term(o_term, 'fypo', session)
             session.add(m_term)
             found = False
-            for child in m_term.child_terms:
-                found = found or (child.parent_term.accession == 'CHEBI:24431')
+            for relation in m_term.child_terms:
+                found = found or (relation.child_term.accession == 'CHEBI:24431')
         self.assertTrue(found)
 
     @ignore_warnings
@@ -326,7 +320,16 @@ class TestOLSLoader(unittest.TestCase):
             session.add(m_term)
             session.commit()
 
+    @ignore_warnings
     def testMissingSubset(self):
         with dal.session_scope() as session:
             subset = self.loader.load_subset('efo_slim', 'efo', session)
             self.assertEqual(subset.definition, 'Efo slim')
+
+    def testMissingOboId(self):
+        self.loader.options['process_relations'] = False
+        self.loader.options['process_parents'] = False
+        with dal.session_scope() as session:
+            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/PR_P68993', unique=True, silent=True)
+            m_term = self.loader.load_term(o_term, 'pr', session)
+            self.assertEqual(m_term.accession, 'PR:P68993')

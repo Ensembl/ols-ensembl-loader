@@ -12,14 +12,15 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-import os
 import logging
+import os
 from os.path import join
 from urllib import parse
 
 import eHive
 
 from bio.ensembl.ontology.loader import OlsLoader
+
 
 class OLSHiveLoader(eHive.BaseRunnable):
     """ OLS MySQL loader runnable class for eHive integration """
@@ -61,6 +62,12 @@ class OLSHiveLoader(eHive.BaseRunnable):
                             datefmt='%m-%d %H:%M:%S',
                             filename=join(self.param_required('output_dir'),
                                           self.log_file % self.param_required('ontology_name')))
+
+        ols_error_handler = logging.FileHandler(join(self.param_required('output_dir'),
+                                                     self.log_file % self.param_required('ontology_name')))
+        logger = logging.getLogger('ols_errors')
+        logger.addHandler(ols_error_handler)
+        logger.setLevel(logging.ERROR)
         self.ols_loader = OlsLoader(self.param_required('db_url'), **options)
         self.ols_loader.init_meta()
         assert self.param_required('ontology_name') in self.ols_loader.allowed_ontologies

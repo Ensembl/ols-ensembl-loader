@@ -14,12 +14,12 @@
 """
 import datetime
 import logging
-import time
-import inflection
 from os import getenv
 
 import dateutil.parser
+import inflection
 import itypes
+import time
 from coreapi.exceptions import CoreAPIException
 from requests.exceptions import ConnectionError
 from sqlalchemy.orm.exc import NoResultFound
@@ -30,6 +30,21 @@ from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
 
 logger = logging.getLogger(__name__)
+
+
+def get_accession(o_term):
+    if not o_term.obo_id:
+        log = logging.getLogger('ols_errors')
+        log.error('[NO_OBO_ID][%s][%s]', o_term.short_form, o_term.iri)
+        # guess
+        sp = o_term.short_form.split('_')
+        if len(sp) == 2:
+            o_term.obo_id = ':'.join(sp)
+            return o_term.obo_id
+        else:
+            logger.error('Unable to parse %s', o_term.short_form)
+            return False
+    return o_term.obo_id
 
 
 class OlsLoader(object):
@@ -170,7 +185,7 @@ class OlsLoader(object):
             logger.info('Slice len %s', len(terms))
         for o_term in terms:
             with dal.session_scope() as session:
-                if o_term.is_defining_ontology and o_term.obo_id:
+                if o_term.is_defining_ontology and get_accession(o_term):
                     logger.debug('Loaded term (from OLS) %s', o_term)
                     logger.debug('Adding/Retrieving namespaced ontology %s', o_term.obo_name_space)
                     ontology, created = get_one_or_create(Ontology,
@@ -181,10 +196,9 @@ class OlsLoader(object):
                                                               version=o_ontology.version,
                                                               title=o_ontology.title))
                     term = self.load_term(o_term, ontology, session)
-                    session.add(term)
+                    if term:
+                        session.add(term)
                     nb_terms += 1
-                elif not o_term.obo_id and o_term.short_form != 'Thing':
-                    logger.error('OLS ERROR: NO_OBO_ID for %s', o_term.short_form)
         return nb_terms
 
     def load_term(self, o_term, ontology, session):
@@ -197,14 +211,14 @@ class OlsLoader(object):
         else:
             raise RuntimeError('Wrong parameter')
         session.add(m_ontology)
-        if o_term.obo_id:
+        if get_accession(o_term):
             m_term, created = get_one_or_create(Term,
                                                 session,
                                                 accession=o_term.obo_id,
                                                 create_method_kwargs=dict(helper=o_term,
                                                                           ontology=m_ontology))
 
-            logger.info('Loaded Term %s ...', m_term.accession)
+            logger.info('Loaded Term [%s] ...', m_term.accession)
             logger.debug('Detailed Term %s', m_term)
             if created:
                 self.load_term_subsets(m_term, session)
@@ -216,8 +230,6 @@ class OlsLoader(object):
                     self.load_term_ancestors(m_term, o_term, session)
             return m_term
         else:
-            if o_term.short_form != 'Thing':
-                logger.error('OLS ERROR: NO_OBO_ID for %s', o_term.short_form)
             return None
 
     def load_alt_ids(self, m_term, o_term, session):
@@ -253,7 +265,6 @@ class OlsLoader(object):
                                                                           'type': 'property'})
         if search and len(search) >= 1:
             prop = helpers.Property(ontology_name=ontology_name, iri=search[0].iri)
-            print(prop)
             details = self.__call_client('detail', prop, unique=True, silent=True)
             if details:
                 subset_def = details.definition or details.annotation.get('comment', [''])[0] or subset_name
@@ -296,7 +307,7 @@ class OlsLoader(object):
             logger.info('Loading %s relation %s (%s)...', m_term.accession, rel_name, rel_name)
             logger.info('%s related terms ', len(o_relatives))
             for o_related in o_relatives:
-                if o_related.obo_id is not None:
+                if get_accession(o_related) is not None:
                     # o_related.ontology_name in self.allowed_ontologies
                     relation_type, created = get_one_or_create(RelationType,
                                                                session,
@@ -305,53 +316,48 @@ class OlsLoader(object):
                     m_related, relation = self.load_term_relation(m_term, o_related, relation_type, session)
                     n_relations += 1
                     logger.debug('Loading related %s', m_related)
-                else:
-                    logger.error('Term %s has no OBO_ID (%s)', o_related, o_related.ontology_name)
             logger.info('... Done (%s)', n_relations)
         return n_relations
 
     def load_term_relation(self, m_term, o_term, relation_type, session):
-        if o_term.is_defining_ontology:
-            logger.debug('Related term is defined in SAME ontology')
-            o_term_details = o_term
-            r_ontology = m_term.ontology
-        else:
-            guessed_ontology = o_term.obo_id.split(':')[0].lower()
-            logger.debug('Term ontology: %s', guessed_ontology)
-            if guessed_ontology not in self.allowed_ontologies:
-                logger.debug('Related term is defined in EXTERNAL ontology')
-                r_ontology = m_term.ontology
+        accession = get_accession(o_term)
+        if accession:
+            if o_term.is_defining_ontology:
+                logger.debug('Related term is defined in SAME ontology')
                 o_term_details = o_term
+                r_ontology = m_term.ontology
             else:
-                logger.debug('Related term is defined in EXPECTED ontology')
-                o_term_details = self.__call_client('term', identifier=o_term.iri, silent=True, unique=True)
-                if o_term_details:
-                    o_onto_details = self.__call_client('ontology', identifier=o_term_details.ontology_name)
-                    r_ontology, created = get_one_or_create(Ontology,
-                                                            session,
-                                                            name=o_onto_details.ontology_id,
-                                                            namespace=o_term_details.obo_name_space or '',
-                                                            create_method_kwargs=dict(
-                                                                version=o_onto_details.version,
-                                                                title=o_onto_details.title))
-        if o_term_details:
-            if o_term_details.obo_id:
-
-                m_related = self.load_term(o_term=o_term_details, ontology=r_ontology, session=session)
-                logger.info('Adding relation %s %s %s', m_term.accession, relation_type.name,
-                            m_related.accession)
-                m_relation = m_term.add_child_relation(m_related, relation_type, session)
-                logger.debug('Loaded relation %s %s %s', m_term.term_id, relation_type.name, m_related.term_id)
-                return m_related, m_relation
-
+                guessed_ontology = accession.split(':')[0].lower()
+                logger.debug('Term ontology: %s', guessed_ontology)
+                if guessed_ontology not in self.allowed_ontologies:
+                    logger.debug('Related term is defined in EXTERNAL ontology')
+                    r_ontology = m_term.ontology
+                    o_term_details = o_term
+                else:
+                    logger.debug('Related term is defined in EXPECTED ontology')
+                    o_term_details = self.__call_client('term', identifier=o_term.iri, silent=True, unique=True)
+                    if o_term_details:
+                        o_onto_details = self.__call_client('ontology', identifier=o_term_details.ontology_name)
+                        r_ontology, created = get_one_or_create(Ontology,
+                                                                session,
+                                                                name=o_onto_details.ontology_id,
+                                                                namespace=o_term_details.obo_name_space or '',
+                                                                create_method_kwargs=dict(
+                                                                    version=o_onto_details.version,
+                                                                    title=o_onto_details.title))
+            if o_term_details:
+                if get_accession(o_term_details):
+                    m_related = self.load_term(o_term=o_term_details, ontology=r_ontology, session=session)
+                    logger.info('Adding relation %s %s %s', m_term.accession, relation_type.name,
+                                m_related.accession)
+                    m_relation = m_term.add_child_relation(m_related, relation_type, session)
+                    logger.debug('Loaded relation %s %s %s', m_term.term_id, relation_type.name, m_related.term_id)
+                    return m_related, m_relation
             else:
-                if o_term.short_form != 'Thing':
-                    logger.error('OLS ERROR: NO_OBO_ID for %s', o_term.short_form)
-        else:
-            logger.warning('Term %s (%s) relation %s with %s not found in %s ',
-                           m_term.accession, m_term.ontology.name,
-                           relation_type.name,
-                           o_term.iri, o_term.ontology_name)
+                logger.warning('Term %s (%s) relation %s with %s not found in %s ',
+                               m_term.accession, m_term.ontology.name,
+                               relation_type.name,
+                               o_term.iri, o_term.ontology_name)
         return None, None
 
     def load_term_ancestors(self, m_term, o_term, session):
@@ -364,7 +370,7 @@ class OlsLoader(object):
                                                        name='is_a')
             for ancestor in ancestors:
                 logger.debug('Parent %s ', ancestor.obo_id)
-                if ancestor.obo_id:
+                if get_accession(ancestor):
                     parent, relation = self.load_term_relation(m_term, ancestor, relation_type, session)
                     if parent is not None:
                         self.load_term_ancestors(parent, ancestor, session)

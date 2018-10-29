@@ -215,6 +215,10 @@ class Term(LoadAble, Base):
         {'mysql_engine': 'MyISAM'}
     )
 
+    _load_map = dict(
+        accession='obo_id'
+    )
+
     def __dir__(self):
         return ['term_id', 'name', 'ontology_id', 'subsets', 'accession', 'description', 'is_root', 'is_obsolete',
                 'iri', 'ontology']
