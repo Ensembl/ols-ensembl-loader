@@ -162,7 +162,30 @@ class OlsLoader(object):
                     session.delete(meta)
                 ontologies = session.query(Ontology).filter_by(name=ontology_name).all()
                 for ontology in ontologies:
-                    logger.debug('Deleting ontology %s', ontology)
+                    logger.info('Deleting namespaced ontology %s - %s', ontology.name, ontology.namespace)
+                    res = session.query(Synonym).filter(Synonym.term_id == Term.term_id,
+                                                        Term.ontology_id == ontology.id).delete(
+                        synchronize_session=False)
+                    logger.info('Wiped %s synonyms', res)
+                    rel = session.query(Relation).filter(Relation.child_term_id == Term.term_id,
+                                                   Term.ontology_id == ontology.id).delete(synchronize_session=False)
+                    rel2 = session.query(Relation).filter(Relation.parent_term_id == Term.term_id,
+                                                   Term.ontology_id == ontology.id).delete(synchronize_session=False)
+                    logger.info('Wiped %s Relations', rel + rel2)
+
+                    clo = session.query(Closure).filter(Closure.child_term_id == Term.term_id,
+                                                  Term.ontology_id == ontology.id).delete(synchronize_session=False)
+                    clo1 = session.query(Closure).filter(Closure.parent_term_id == Term.term_id,
+                                                  Term.ontology_id == ontology.id).delete(synchronize_session=False)
+                    clo2 = session.query(Closure).filter(Closure.subparent_term_id == Term.term_id,
+                                                  Term.ontology_id == ontology.id).delete(synchronize_session=False)
+                    logger.info('Wiped %s Closure', clo + clo1 + clo2)
+
+                    res = session.query(AltId).filter(AltId.term_id == Term.term_id,
+                                                Term.ontology_id == ontology.id).delete(synchronize_session=False)
+                    logger.info('Wiped %s AltIds', res)
+                    res = session.query(Term).filter(Term.ontology_id == ontology.id).delete(synchronize_session=False)
+                    logger.info('Wiped %s Terms', res)
                     session.delete(ontology)
                 return True
             except NoResultFound:

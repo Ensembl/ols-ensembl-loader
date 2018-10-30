@@ -236,13 +236,14 @@ class Term(LoadAble, Base):
     iri = Column(Unicode(1000))
 
     alt_ids = relationship("AltId", back_populates="term", cascade='all')
-    synonyms = relationship("Synonym", cascade="delete")
-    child_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.parent_term_id')
-    parent_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.child_term_id')
+    synonyms = relationship("Synonym")
+    child_terms = relationship('Relation', foreign_keys='Relation.parent_term_id')
+    parent_terms = relationship('Relation', foreign_keys='Relation.child_term_id')
 
-    child_closures = relationship('Closure', foreign_keys='Closure.child_term_id', cascade='delete')
-    parent_closures = relationship('Closure', foreign_keys='Closure.parent_term_id', cascade='delete')
-    subparent_closures = relationship('Closure', foreign_keys='Closure.subparent_term_id', cascade='delete')
+    child_closures = relationship('Closure', foreign_keys='Closure.child_term_id')
+    parent_closures = relationship('Closure', foreign_keys='Closure.parent_term_id')
+    subparent_closures = relationship('Closure', foreign_keys='Closure.subparent_term_id')
+
 
     def add_child_relation(self, child_term, rel_type, session):
         relation, created = get_one_or_create(Relation, session,

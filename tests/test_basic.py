@@ -130,18 +130,18 @@ class TestOLSLoader(unittest.TestCase):
     @ignore_warnings
     def testCascadeDelete(self):
         with dal.session_scope() as session:
-            m_ontology = Ontology(name='GO', _namespace='namespace', _version='1', title='Ontology test')
-            m_ontology_2 = Ontology(name='GO', _namespace='namespace 2', _version='1', title='Ontology test 2')
-            m_ontology_3 = Ontology(name='FPO', _namespace='namespace 3', _version='1', title='Ontology test 2')
+            m_ontology = Ontology(name='GO', _namespace='namespace', version='1', title='Ontology test')
+            m_ontology_2 = Ontology(name='GO', _namespace='namespace 2', version='1', title='Ontology test 2')
+            m_ontology_3 = Ontology(name='FPO', _namespace='namespace 3', version='1', title='Ontology test 2')
             session.add(m_ontology)
             session.add(m_ontology_2)
             session.add(m_ontology_3)
             rel_type, created = get_one_or_create(RelationType,
                                                   session,
                                                   name='is_a')
-            for i in range(1, 5):
-                m_term = Term(accession='T:0000%s' % i, name='Term %s' % i, ontology=m_ontology)
-                m_term_2 = Term(accession='T2:0000%s' % i, name='Term %s' % i, ontology=m_ontology_2)
+            for i in range(0, 5):
+                m_term = Term(accession='GO:0000%s' % i, name='Term %s' % i, ontology=m_ontology)
+                m_term_2 = Term(accession='GO:1000%s' % i, name='Term %s' % i, ontology=m_ontology_2)
                 m_term_3 = Term(accession='T3:0000%s' % i, name='Term %s' % i, ontology=m_ontology_3)
                 syn_1 = Synonym(name='TS:000%s' % i, type=SynonymTypeEnum.EXACT, db_xref='REF:000%s' % i)
                 m_term.synonyms.append(syn_1)
@@ -159,9 +159,16 @@ class TestOLSLoader(unittest.TestCase):
                                     ontology=m_ontology_3)
                 session.add_all([closure_1, closure_2, closure_3])
 
+            self.assertEqual(session.query(Synonym).count(), 10)
+            self.assertEqual(session.query(AltId).count(), 5)
+            self.assertEqual(session.query(Relation).count(), 10)
+            self.assertEqual(session.query(Closure).count(), 12)
+
         with dal.session_scope() as session:
             self.loader.wipe_ontology('GO')
-            self.assertEqual(session.query(Term).count(), 4)
+            [self.assertTrue(term.accession.startswith('T3')) for term in session.query(Term).all()]
+            self.assertEqual(0, session.query(Term).filter(Term.ontology_id == 1).count())
+            self.assertEqual(session.query(Term).count(), 5)
             self.assertEqual(session.query(Synonym).count(), 0)
             self.assertEqual(session.query(AltId).count(), 0)
             self.assertEqual(session.query(Relation).count(), 0)
@@ -334,3 +341,21 @@ class TestOLSLoader(unittest.TestCase):
             o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/PR_P68993', unique=True, silent=True)
             m_term = self.loader.load_term(o_term, 'pr', session)
             self.assertEqual(m_term.accession, 'PR:P68993')
+
+    @ignore_warnings
+    def testExternalRelationship(self):
+        self.loader.options['process_relations'] = False
+        self.loader.options['process_parents'] = True
+        with dal.session_scope() as session:
+            o_term = self.client.term(identifier='http://www.ebi.ac.uk/efo/EFO_0002911', unique=True, silent=True)
+            m_term = self.loader.load_term(o_term, 'efo', session)
+            session.add(m_term)
+            found = False
+            for relation in m_term.child_terms:
+                found = found or (relation.child_term.accession == 'OBI:0000245')
+        self.assertTrue(found)
+        session = dal.get_session()
+        ontologies = session.query(Ontology).count()
+        # assert that OBI has not been inserted
+        self.assertEqual(1, ontologies)
+

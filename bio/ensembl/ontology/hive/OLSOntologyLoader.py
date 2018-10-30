@@ -32,7 +32,6 @@ class OLSOntologyLoader(OLSHiveLoader):
             self.ols_loader.wipe_ontology(self.param_required('ontology_name'))
 
         with dal.session_scope() as session:
-
             m_ontology = self.ols_loader.load_ontology(self.param_required('ontology_name'))
             session.add(m_ontology)
             self.dataflow({'ontology_name': self.param_required('ontology_name'),
