@@ -326,6 +326,7 @@ class TestOLSLoader(unittest.TestCase):
             subset = self.loader.load_subset('efo_slim', 'efo', session)
             self.assertEqual(subset.definition, 'Efo slim')
 
+    @ignore_warnings
     def testMissingOboId(self):
         self.loader.options['process_relations'] = False
         self.loader.options['process_parents'] = False

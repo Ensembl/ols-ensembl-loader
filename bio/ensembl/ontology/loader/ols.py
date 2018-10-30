@@ -117,10 +117,10 @@ class OlsLoader(object):
                 logger.debug('Calling client.%s(%s)(%s)', method, args, kwargs)
                 return self.client.__getattribute__(method)(*args, **kwargs)
             except (ConnectionError, CoreAPIException) as e:
-                logger.error('Client call error (%s) for %s(%s)(%s): %s ',
-                             self.current_ontology, method, args, kwargs, e)
                 # wait 5 seconds until next OLS api client try
                 time.sleep(5)
+                logger.warning('%s call retry: %s(%s)(%s): %s ',
+                               self.current_ontology, method, args, kwargs, e)
                 retry += 1
                 if retry >= max_retry:
                     logger.fatal('Max API retry for %s(%s)(%s)', method, args, kwargs)
@@ -171,6 +171,7 @@ class OlsLoader(object):
 
     def load_ontology_terms(self, ontology, start=None, end=None):
 
+        self.current_ontology = ontology
         nb_terms = 0
         with dal.session_scope() as session:
             session.query(Term).join(Ontology).filter()
@@ -265,7 +266,7 @@ class OlsLoader(object):
                                                                           'type': 'property'})
         if search and len(search) >= 1:
             prop = helpers.Property(ontology_name=ontology_name, iri=search[0].iri)
-            details = self.__call_client('detail', prop, unique=True, silent=True)
+            details = self.__call_client('detail', item=prop, unique=True, silent=True)
             if details:
                 subset_def = details.definition or details.annotation.get('comment', [''])[0] or subset_name
                 if not subset_def:
