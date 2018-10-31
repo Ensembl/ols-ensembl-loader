@@ -45,14 +45,13 @@ def get_one_or_create(model,
     create_kwargs = create_method_kwargs or {}
     q = 'undefined'
     try:
-        q = session.query(model).filter_by(**kwargs)
-        obj = q.one()
+        obj = session.query(model).filter_by(**kwargs).one()
         logger.debug('Exists %s', obj)
         if 'helper' in create_kwargs:
             obj.update_from_helper(helper=create_kwargs.get('helper'))
         else:
             [setattr(obj, attribute, create_kwargs.get(attribute)) for attribute in create_kwargs if
-             attribute is not None]
+             attribute is not None and create_kwargs.get(attribute) != getattr(obj, attribute)]
         logger.debug('Updated %s', obj)
         return obj, False
     except NoResultFound:
@@ -103,7 +102,8 @@ class LoadAble(object):
 
     def update_from_helper(self, helper):
         [self.__setattr__(key, getattr(helper, self._load_map.get(key, key), None)) for key in dir(self) if
-         getattr(helper, self._load_map.get(key, key), None) is not None]
+         getattr(helper, self._load_map.get(key, key), None) is not None
+         and getattr(helper, self._load_map.get(key, key)) != self.__getattribute__(key)]
 
 
 class Meta(Base):
@@ -243,7 +243,6 @@ class Term(LoadAble, Base):
     child_closures = relationship('Closure', foreign_keys='Closure.child_term_id')
     parent_closures = relationship('Closure', foreign_keys='Closure.parent_term_id')
     subparent_closures = relationship('Closure', foreign_keys='Closure.subparent_term_id')
-
 
     def add_child_relation(self, child_term, rel_type, session):
         relation, created = get_one_or_create(Relation, session,

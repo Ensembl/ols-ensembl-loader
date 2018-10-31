@@ -24,7 +24,7 @@ from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s \t: %(module)s(%(lineno)d) - \t%(message)s',
                     datefmt='%m-%d %H:%M:%S')
 
@@ -38,6 +38,7 @@ def ignore_warnings(test_func):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", Warning)
             test_func(self, *args, **kwargs)
+
     return do_test
 
 
@@ -301,7 +302,6 @@ class TestOLSLoader(unittest.TestCase):
                                                session=session)
             self.assertGreaterEqual(len(m_subset.definition), 128)
 
-
     @ignore_warnings
     def testRelatedNonExpected(self):
         with dal.session_scope() as session:
@@ -352,4 +352,3 @@ class TestOLSLoader(unittest.TestCase):
         ontologies = session.query(Ontology).count()
         # assert that OBI has not been inserted
         self.assertEqual(1, ontologies)
-
