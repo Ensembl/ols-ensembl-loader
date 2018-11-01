@@ -16,9 +16,11 @@ import enum
 import logging
 
 from sqlalchemy import *
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship, synonym
+from sqlalchemy.orm.exc import NoResultFound
 
 import ebi.ols.api.helpers as helpers
 
@@ -29,10 +31,43 @@ SQLAlchemy database models for OLS ontologies loading
  
 """
 __all__ = ['Ontology', 'Meta', 'Term', 'Subset', 'RelationType', 'Closure', 'Relation', 'AltId', 'Synonym',
-           'SynonymTypeEnum']
+           'SynonymTypeEnum', 'get_one_or_create']
 
 long_string = String(5000)
 long_string = long_string.with_variant(String(5000, collation='utf8_general_ci'), 'mysql')
+
+
+def get_one_or_create(model,
+                      session=None,
+                      create_method='',
+                      create_method_kwargs=None,
+                      **kwargs):
+    create_kwargs = create_method_kwargs or {}
+    q = 'undefined'
+    try:
+        obj = session.query(model).filter_by(**kwargs).one()
+        logger.debug('Exists %s', obj)
+        if 'helper' in create_kwargs:
+            obj.update_from_helper(helper=create_kwargs.get('helper'))
+        else:
+            [setattr(obj, attribute, create_kwargs.get(attribute)) for attribute in create_kwargs if
+             attribute is not None and create_kwargs.get(attribute) != getattr(obj, attribute)]
+        logger.debug('Updated %s', obj)
+        return obj, False
+    except NoResultFound:
+        try:
+            create_kwargs.update(kwargs)
+            new_obj = getattr(model, create_method, model)(**create_kwargs)
+            session.add(new_obj)
+            session.commit()
+            logger.debug('Create %s', new_obj)
+            return new_obj, True
+        except IntegrityError as e:
+            logger.error('Integrity error upon flush: %s', str(e))
+            logger.error('Initial query: %s ', q)
+            logger.error('Initial filters: %s', kwargs or {})
+            session.rollback()
+            return session.query(model).filter_by(**kwargs).one(), False
 
 
 class SynonymTypeEnum(enum.Enum):
@@ -67,7 +102,8 @@ class LoadAble(object):
 
     def update_from_helper(self, helper):
         [self.__setattr__(key, getattr(helper, self._load_map.get(key, key), None)) for key in dir(self) if
-         getattr(helper, self._load_map.get(key, key), None) is not None]
+         getattr(helper, self._load_map.get(key, key), None) is not None
+         and getattr(helper, self._load_map.get(key, key)) != self.__getattribute__(key)]
 
 
 class Meta(Base):
@@ -101,7 +137,7 @@ class Ontology(LoadAble, Base):
         return ['id', 'name', 'namespace', 'version', 'title', 'number_of_terms']
 
     id = Column('ontology_id', Integer, primary_key=True)
-    name = Column(String(64), nullable=False)
+    name = Column('name', String(64), nullable=False)
     _namespace = Column('namespace', String(64), nullable=False)
     _version = Column('data_version', String(64), nullable=True)
     title = Column(String(255), nullable=True)
@@ -168,7 +204,7 @@ class Subset(LoadAble, Base):
 
     subset_id = Column(Integer, primary_key=True)
     name = Column(String(64, convert_unicode=True), nullable=False, unique=True)
-    definition = Column(String(128, convert_unicode=True), nullable=False, server_default=text("''"))
+    definition = Column(Unicode(1000), nullable=False, server_default=text("''"))
 
 
 class Term(LoadAble, Base):
@@ -177,6 +213,10 @@ class Term(LoadAble, Base):
         Index('ontology_acc_idx', 'ontology_id', 'accession', unique=True),
         Index('term_name_idx', 'name', mysql_length=100),
         {'mysql_engine': 'MyISAM'}
+    )
+
+    _load_map = dict(
+        accession='obo_id'
     )
 
     def __dir__(self):
@@ -196,22 +236,32 @@ class Term(LoadAble, Base):
     iri = Column(Unicode(1000))
 
     alt_ids = relationship("AltId", back_populates="term", cascade='all')
-    synonyms = relationship("Synonym", cascade="delete")
-    child_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.child_term_id')
-    parent_terms = relationship('Relation', cascade='delete', foreign_keys='Relation.parent_term_id')
+    synonyms = relationship("Synonym")
+    child_terms = relationship('Relation', foreign_keys='Relation.parent_term_id')
+    parent_terms = relationship('Relation', foreign_keys='Relation.child_term_id')
 
-    child_closures = relationship('Closure', foreign_keys='Closure.child_term_id', cascade='delete')
-    parent_closures = relationship('Closure', foreign_keys='Closure.parent_term_id', cascade='delete')
-    subparent_closures = relationship('Closure', foreign_keys='Closure.subparent_term_id', cascade='delete')
+    child_closures = relationship('Closure', foreign_keys='Closure.child_term_id')
+    parent_closures = relationship('Closure', foreign_keys='Closure.parent_term_id')
+    subparent_closures = relationship('Closure', foreign_keys='Closure.subparent_term_id')
 
-    def add_child_relation(self, child_term, ontology, rel_type):
-        relation = Relation(parent_term=self, child_term=child_term, ontology=ontology, relation_type=rel_type)
-        self.child_terms.append(relation)
+    def add_child_relation(self, child_term, rel_type, session):
+        relation, created = get_one_or_create(Relation, session,
+                                              parent_term=self,
+                                              child_term=child_term,
+                                              relation_type=rel_type,
+                                              ontology=self.ontology)
+        if created:
+            self.child_terms.append(relation)
         return relation
 
-    def add_parent_relation(self, parent_term, ontology, rel_type):
-        relation = Relation(parent_term=parent_term, child_term=self, ontology=ontology, relation_type=rel_type)
-        self.parent_terms.append(relation)
+    def add_parent_relation(self, parent_term, rel_type, session):
+        relation, created = get_one_or_create(Relation, session,
+                                              parent_term=parent_term,
+                                              child_term=self,
+                                              ontology=self.ontology,
+                                              relation_type=rel_type)
+        if created:
+            self.parent_terms.append(relation)
         return relation
 
     def closures(self):

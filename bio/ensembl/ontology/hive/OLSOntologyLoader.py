@@ -32,11 +32,10 @@ class OLSOntologyLoader(OLSHiveLoader):
             self.ols_loader.wipe_ontology(self.param_required('ontology_name'))
 
         with dal.session_scope() as session:
-
             m_ontology = self.ols_loader.load_ontology(self.param_required('ontology_name'))
             session.add(m_ontology)
-            self.dataflow({'nb_terms': m_ontology.number_of_terms,
-                           'ontology_name': self.param_required('ontology_name')
+            self.dataflow({'ontology_name': self.param_required('ontology_name'),
+                           'nb_terms': m_ontology.number_of_terms
                            })
 
     def write_output(self):

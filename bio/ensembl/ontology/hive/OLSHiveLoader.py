@@ -12,8 +12,8 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-import os
 import logging
+import os
 from os.path import join
 from urllib import parse
 
@@ -32,7 +32,7 @@ class OLSHiveLoader(eHive.BaseRunnable):
         logging.INFO,
         logging.DEBUG
     ]
-    log_file = 'ols_loader_%s.log'
+    log_file = '%s_ontology.log'
     ols_loader = None
 
     def param_defaults(self):
@@ -58,11 +58,16 @@ class OLSHiveLoader(eHive.BaseRunnable):
             assert db_url_parts.password != ''
         os.makedirs(self.param_required('output_dir'), exist_ok=True)
         logging.basicConfig(level=self.log_levels[self.param('verbosity')],
-                            format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
-                            datefmt='%m-%d %H:%M - %s',
+                            format='%(asctime)s %(levelname)s : %(name)s(%(lineno)d) - \t%(message)s',
+                            datefmt='%m-%d %H:%M:%S',
                             filename=join(self.param_required('output_dir'),
-                                          self.log_file % self.param_required('ontology_name')),
-                            filemode='w')
+                                          self.log_file % self.param_required('ontology_name')))
+
+        ols_error_handler = logging.FileHandler(join(self.param_required('output_dir'),
+                                                     self.log_file % self.param_required('ontology_name')))
+        logger = logging.getLogger('ols_errors')
+        logger.addHandler(ols_error_handler)
+        logger.setLevel(logging.ERROR)
         self.ols_loader = OlsLoader(self.param_required('db_url'), **options)
         self.ols_loader.init_meta()
         assert self.param_required('ontology_name') in self.ols_loader.allowed_ontologies
