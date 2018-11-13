@@ -17,6 +17,7 @@ import logging
 import unittest
 import warnings
 from os import getenv
+from os.path import isfile
 
 import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.loader import OlsLoader
@@ -24,22 +25,13 @@ from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s \t: %(module)s(%(lineno)d) - \t%(message)s',
                     datefmt='%m-%d %H:%M:%S')
 
 logger = logging.getLogger(__name__)
 
-logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
-
-
-def ignore_warnings(test_func):
-    def do_test(self, *args, **kwargs):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", Warning)
-            test_func(self, *args, **kwargs)
-
-    return do_test
+logging.getLogger('urllib3.connectionpool').setLevel(logging.FATAL)
 
 
 class TestOLSLoader(unittest.TestCase):
@@ -52,7 +44,6 @@ class TestOLSLoader(unittest.TestCase):
         self.loader = OlsLoader(self.db_url, echo=False)
         self.client = OlsClient()
 
-    @ignore_warnings
     def testLoadOntology(self):
         # test retrieve
         # test try to create duplicated
@@ -94,10 +85,10 @@ class TestOLSLoader(unittest.TestCase):
             ontologies = session.query(Ontology).filter_by(name=ontology_name).count()
             self.assertEqual(ontologies, 0)
 
-    @ignore_warnings
     def testLoadOntologyTerms(self):
         session = dal.get_session()
         ontology_name = 'cio'
+        onto = self.loader.load_ontology(ontology_name)
         expected = self.loader.load_ontology_terms(ontology_name)
         logger.info('Expected terms %s', expected)
         s_terms = session.query(Term).filter(Ontology.name == ontology_name)
@@ -105,14 +96,11 @@ class TestOLSLoader(unittest.TestCase):
         logger.info('Inserted terms %s', inserted)
         self.assertEqual(expected, inserted)
 
-    @ignore_warnings
     def testLoadTimeMeta(self):
         ontology_name = 'bfo'
         self.loader.options['wipe'] = True
         with dal.session_scope() as session:
-            o_ontology = self.client.ontology(ontology_name)
             m_ontology = self.loader.load_ontology(ontology_name)
-            terms = self.loader.load_ontology_terms(ontology_name)
             session.add(m_ontology)
             self.assertIsInstance(m_ontology, Ontology)
         session = dal.get_session()
@@ -128,8 +116,8 @@ class TestOLSLoader(unittest.TestCase):
         except ValueError:
             self.fail('Wrong date format')
 
-    @ignore_warnings
     def testCascadeDelete(self):
+
         if self.db_url.startswith('mysql'):
 
             with dal.session_scope() as session:
@@ -179,14 +167,12 @@ class TestOLSLoader(unittest.TestCase):
         else:
             self.skipTest('No suitable engine for testing')
 
-    @ignore_warnings
     def testMeta(self):
         session = dal.get_session()
         self.loader.init_meta()
         metas = session.query(Meta).all()
         self.assertGreaterEqual(len(metas), 2)
 
-    @ignore_warnings
     def testEncodingTerm(self):
         self.loader.options['process_relations'] = False
         self.loader.options['process_parents'] = False
@@ -198,7 +184,6 @@ class TestOLSLoader(unittest.TestCase):
         m_term = self.loader.load_term(o_term, m_ontology, session)
         self.assertIn('λ', m_term.description)
 
-    @ignore_warnings
     def testSingleTerm(self):
         self.loader.options['process_relations'] = True
         self.loader.options['process_parents'] = True
@@ -212,12 +197,10 @@ class TestOLSLoader(unittest.TestCase):
             session.commit()
             self.assertGreaterEqual(len(m_term.child_terms), 4)
 
-    @ignore_warnings
     def testOntologiesList(self):
         self.assertIsInstance(self.loader.allowed_ontologies, list)
         self.assertIn('go', self.loader.allowed_ontologies)
 
-    @ignore_warnings
     def testRelationsShips(self):
         with dal.session_scope() as session:
             m_ontology = self.loader.load_ontology('bto')
@@ -228,7 +211,6 @@ class TestOLSLoader(unittest.TestCase):
             session.add(m_term)
             self.assertGreaterEqual(len(m_term.parent_terms), 0)
 
-    @ignore_warnings
     def testRelationOtherOntology(self):
         self.loader.options['process_relations'] = True
         self.loader.options['process_parents'] = True
@@ -243,7 +225,6 @@ class TestOLSLoader(unittest.TestCase):
             term = session.query(Term).filter_by(accession='BTO:0000164')
             self.assertEqual(1, term.count())
 
-    @ignore_warnings
     def testSubsets(self):
         self.loader.options['process_relations'] = False
         self.loader.options['process_parents'] = False
@@ -262,18 +243,16 @@ class TestOLSLoader(unittest.TestCase):
             details = self.client.detail(subset)
             self.assertIsNone(details.definition, '')
 
-    @ignore_warnings
     def testAltIds(self):
         self.loader.options['process_relations'] = False
         self.loader.options['process_parents'] = False
 
         with dal.session_scope() as session:
-            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/GO_0005261', unique=True, silent=True)
+            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/GO_0005261')
             m_term = self.loader.load_term(o_term, 'go', session)
             session.add(m_term)
             self.assertGreaterEqual(len(m_term.alt_ids), 2)
 
-    @ignore_warnings
     def testTrickTerm(self):
         self.loader.options['process_relations'] = True
         self.loader.options['process_parents'] = False
@@ -289,20 +268,6 @@ class TestOLSLoader(unittest.TestCase):
                 found = found or (relation.child_term.accession == 'CHEBI:24431')
         self.assertTrue(found)
 
-    @ignore_warnings
-    def testLoadSubsetLongDef(self):
-        self.loader.options['process_relations'] = False
-        # https://www.ebi.ac.uk/ols/api/ontologies/mondo/properties/http%253A%252F%252Fpurl.obolibrary.org%252Fobo%252Fmondo%2523prototype_pattern
-        with dal.session_scope() as session:
-            h_property = helpers.Property(ontology_name='mondo',
-                                          iri='http://purl.obolibrary.org/obo/mondo#prototype_pattern')
-            o_property = self.client.detail(h_property)
-            m_subset = self.loader.load_subset(subset_name=o_property.short_form,
-                                               ontology_name='mondo',
-                                               session=session)
-            self.assertGreaterEqual(len(m_subset.definition), 128)
-
-    @ignore_warnings
     def testRelatedNonExpected(self):
         with dal.session_scope() as session:
             ontology_name = 'eco'
@@ -313,21 +278,20 @@ class TestOLSLoader(unittest.TestCase):
             logger.info('Inserted terms %s', inserted)
             self.assertGreaterEqual(inserted, expected)
 
-    @ignore_warnings
     def testRelationSingleTerm(self):
         with dal.session_scope() as session:
-            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/ECO_0007571', unique=True, silent=True)
+            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/ECO_0007571')
             m_term = self.loader.load_term(o_term, 'eco', session)
             session.add(m_term)
             session.commit()
 
-    @ignore_warnings
-    def testMissingSubset(self):
+    def testSubsetErrors(self):
         with dal.session_scope() as session:
-            subset = self.loader.load_subset('efo_slim', 'efo', session)
-            self.assertEqual(subset.definition, 'Efo slim')
+            o_term = self.client.term(identifier='http://www.ebi.ac.uk/efo/EFO_0003503')
+            m_term = self.loader.load_term(o_term, 'efo', session)
+            session.add(m_term)
+            self.assertIsInstance(session.query(Subset).filter_by(name='efo_slim').one(), Subset)
 
-    @ignore_warnings
     def testMissingOboId(self):
         self.loader.options['process_relations'] = False
         self.loader.options['process_parents'] = False
@@ -336,9 +300,8 @@ class TestOLSLoader(unittest.TestCase):
             m_term = self.loader.load_term(o_term, 'pr', session)
             self.assertEqual(m_term.accession, 'PR:P68993')
 
-    @ignore_warnings
     def testExternalRelationship(self):
-        self.loader.options['process_relations'] = False
+        self.loader.options['process_relations'] = True
         self.loader.options['process_parents'] = True
         with dal.session_scope() as session:
             o_term = self.client.term(identifier='http://www.ebi.ac.uk/efo/EFO_0002911', unique=True, silent=True)
@@ -352,3 +315,13 @@ class TestOLSLoader(unittest.TestCase):
         ontologies = session.query(Ontology).count()
         # assert that OBI has not been inserted
         self.assertEqual(1, ontologies)
+
+    def testReport(self):
+        size = 100
+        self.loader = OlsLoader(self.db_url, page_size=size, output_dir='/tmp')
+        o_ontology = self.client.ontology('ogms')
+        ranges = range(o_ontology.number_of_terms)
+        for i in ranges[::size]:
+            self.loader.load_ontology_terms('ogms', i, min(i+size-1, o_ontology.number_of_terms))
+        self.loader.final_report('ogms')
+        self.assertTrue(isfile('/tmp/ogms_report.log'))

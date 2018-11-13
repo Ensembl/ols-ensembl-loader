@@ -47,7 +47,5 @@ if __name__ == "__main__":
         logger.info('Ontology %s reset', arguments.ontology)
     logger.info('Loading ontology %s', arguments.ontology)
     with dal.session_scope() as session:
-        m_ontology = loader.load_ontology(arguments.ontology)
-        session.add(m_ontology)
-        n_terms = loader.load_ontology_terms(m_ontology)
+        n_terms = loader.load_ontology_terms(arguments.ontology)
     logger.info('...Done')

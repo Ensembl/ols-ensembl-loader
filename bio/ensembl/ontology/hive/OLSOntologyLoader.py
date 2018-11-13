@@ -17,6 +17,7 @@ import logging
 
 from bio.ensembl.ontology.loader.db import dal
 from .OLSHiveLoader import OLSHiveLoader
+from ebi.ols.api.client import OlsClient
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +32,12 @@ class OLSOntologyLoader(OLSHiveLoader):
         if self.param_required('wipe_one') == 1:
             self.ols_loader.wipe_ontology(self.param_required('ontology_name'))
 
-        with dal.session_scope() as session:
-            m_ontology = self.ols_loader.load_ontology(self.param_required('ontology_name'))
-            session.add(m_ontology)
-            self.dataflow({'ontology_name': self.param_required('ontology_name'),
-                           'nb_terms': m_ontology.number_of_terms
-                           })
+        assert self.param_required('ontology_name') in self.ols_loader.allowed_ontologies
+        client = OlsClient()
+        m_ontology = client.ontology(self.param_required('ontology_name'))
+        self.dataflow({ 'ontology_name': self.param_required('ontology_name'),
+                        'nb_terms': m_ontology.number_of_terms
+                    })
 
     def write_output(self):
         logger.info('Ontology %s done...', self.param_required('ontology_name'))

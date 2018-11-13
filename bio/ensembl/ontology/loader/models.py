@@ -118,9 +118,6 @@ class Meta(Base):
     meta_value = Column(String(128))
     species_id = Column(Integer)
 
-    def __repr__(self):
-        return '<Meta(meta_id={}, meta_key={}, meta_value={})>'.format(self.meta_id, self.meta_key, self.meta_value)
-
 
 class Ontology(LoadAble, Base):
     __tablename__ = 'ontology'
@@ -213,10 +210,6 @@ class Term(LoadAble, Base):
         Index('ontology_acc_idx', 'ontology_id', 'accession', unique=True),
         Index('term_name_idx', 'name', mysql_length=100),
         {'mysql_engine': 'MyISAM'}
-    )
-
-    _load_map = dict(
-        accession='obo_id'
     )
 
     def __dir__(self):
