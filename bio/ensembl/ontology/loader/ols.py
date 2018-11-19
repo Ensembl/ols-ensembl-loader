@@ -82,14 +82,14 @@ class OlsLoader(object):
         self.current_ontology = None
 
     def get_report_logger(self):
-        report_logger = logging.getLogger(self.current_ontology)
+        report_logger = logging.getLogger(self.current_ontology + '_report')
+        report_logger.setLevel(logging.INFO)
         if not len(report_logger.handlers):
             log_file = '{}_report.log'
             ols_report_handler = logging.FileHandler(
-                join(self.options.get('output_dir'), log_file.format(self.current_ontology)), 'w')
+                join(self.options.get('output_dir'), log_file.format(self.current_ontology)))
             formatter = logging.Formatter('%(asctime)s:  - \t%(message)s')
             ols_report_handler.setFormatter(formatter)
-            report_logger.setLevel(logging.INFO)
             report_logger.addHandler(ols_report_handler)
         return report_logger
 
@@ -482,6 +482,7 @@ class OlsLoader(object):
         """ Create a report from actual inserted data for ontology """
         session = dal.get_session()
         ontologies = session.query(Ontology).filter_by(name=ontology_name).all()
+        self.current_ontology = ontology_name
         for ontology in ontologies:
             synonyms = session.query(Synonym).filter(Synonym.term_id == Term.term_id,
                                                      Term.ontology_id == ontology.id).count()
