@@ -48,9 +48,9 @@ class OLSHiveLoader(eHive.BaseRunnable):
         options['db_version'] = self.param_required('ens_version')
         if self.param_required('wipe_one'):
             options['wipe'] = True
-
+        # add loader option such as page_size, base_site for testing
         db_url_parts = parse.urlparse(self.param_required('db_url'))
-        assert db_url_parts.scheme in ('mysql')
+        assert db_url_parts.scheme in ('mysql',)
         assert db_url_parts.path != ''
         if db_url_parts.scheme == 'mysql':
             assert db_url_parts.port != ''
@@ -68,9 +68,9 @@ class OLSHiveLoader(eHive.BaseRunnable):
         logger = logging.getLogger('ols_errors')
         logger.addHandler(ols_error_handler)
         logger.setLevel(logging.ERROR)
+        options['output_dir'] = self.param_required('output_dir')
         self.ols_loader = OlsLoader(self.param_required('db_url'), **options)
         self.ols_loader.init_meta()
-        assert self.param_required('ontology_name') in self.ols_loader.allowed_ontologies
 
     def run(self):
         raise RuntimeError('This class is not meant to be an actual Hive Wrapper')
