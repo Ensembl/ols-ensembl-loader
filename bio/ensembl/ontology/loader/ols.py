@@ -128,19 +128,25 @@ class OlsLoader(object):
         ontology_name = ontology.ontology_id
         self.current_ontology = ontology_name
         with dal.session_scope() as session:
-            start = datetime.datetime.now()
-            logger.debug('Updating meta for ontology %s', ontology_name)
-            get_one_or_create(Meta,
-                              session,
-                              meta_key=ontology_name + '_load_date',
-                              create_method_kwargs=dict(
-                                  meta_value=ontology_name.upper() + '/' + start.strftime('%c')))
             self.report('----------------------------------')
             self.report('Ontology [%s] - %s:' % (ontology_name, ontology.config.title))
             self.report('- Number of terms: %s' % ontology.number_of_terms)
             self.report('- Number of individuals: %s' % ontology.number_of_individuals)
             self.report('- Number of properties: %s' % ontology.number_of_properties)
-            if ontology:
+            m_ontology, created = get_one_or_create(Ontology,
+                                                    session,
+                                                    name=ontology.ontology_id,
+                                                    namespace=namespace or ontology_name,
+                                                    create_method_kwargs={'helper': ontology})
+
+            if created:
+                start = datetime.datetime.now()
+                logger.debug('Updating meta for ontology %s', ontology_name)
+                get_one_or_create(Meta,
+                                  session,
+                                  meta_key=ontology_name + '_load_date',
+                                  create_method_kwargs=dict(
+                                      meta_value=ontology_name.upper() + '/' + start.strftime('%c')))
                 try:
                     updated_at = datetime.datetime.strptime(ontology.updated, '%Y-%m-%dT%H:%M:%S.%f%z')
                 except ValueError:
@@ -152,15 +158,10 @@ class OlsLoader(object):
                                                   create_method_kwargs=dict(
                                                       meta_value=ontology.ontology_id.upper() + '/' + updated_at.strftime(
                                                           '%c')))
-                m_ontology, created = get_one_or_create(Ontology,
-                                                        session,
-                                                        name=ontology.ontology_id,
-                                                        namespace=namespace or ontology_name,
-                                                        create_method_kwargs={'helper': ontology})
                 self.report('- {}/{}'.format(meta.meta_key, meta.meta_value))
-                self.report('----------------------------------')
-                logger.info('Loaded [%s/%s] %s', m_ontology.name, m_ontology.namespace, m_ontology.title)
-                return m_ontology
+            self.report('----------------------------------')
+            logger.info('Loaded [%s/%s] %s', m_ontology.name, m_ontology.namespace, m_ontology.title)
+            return m_ontology
         return None
 
     @staticmethod
@@ -233,11 +234,8 @@ class OlsLoader(object):
             else:
                 report_msg = ('- Loading all terms (%s)', len(terms))
             with dal.session_scope() as session:
-                terms_namespaces = []
                 for o_term in terms:
                     if o_term.is_defining_ontology and has_accession(o_term):
-                        logger.debug('Loaded term (from OLS) %s', o_term)
-                        logger.debug('Adding/Retrieving namespaced ontology %s', o_term.obo_name_space)
                         m_ontology, created = get_one_or_create(Ontology,
                                                                 session,
                                                                 name=o_ontology.ontology_id,
@@ -245,13 +243,8 @@ class OlsLoader(object):
                                                                 create_method_kwargs=dict(
                                                                     version=o_ontology.version,
                                                                     title=o_ontology.title))
-
-                        if created and o_term.obo_name_space not in terms_namespaces:
-                            # only load ontology if namespaces has not been seen already
-                            terms_namespaces.append(o_term.obo_name_space)
-                            # load meta for this ontology helper
-                            self.load_ontology(o_ontology,
-                                               namespace=o_term.obo_name_space)
+                        logger.debug('Loaded term (from OLS) %s', o_term)
+                        logger.debug('Adding/Retrieving namespaced ontology %s', o_term.obo_name_space)
                         term = self.load_term(o_term, m_ontology, session)
                         if term:
                             session.add(term)
