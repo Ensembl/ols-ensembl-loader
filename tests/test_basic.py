@@ -25,8 +25,8 @@ from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(levelname)s \t: %(module)s(%(lineno)d) - \t%(message)s',
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
                     datefmt='%m-%d %H:%M:%S')
 
 logger = logging.getLogger(__name__)
@@ -322,6 +322,24 @@ class TestOLSLoader(unittest.TestCase):
         o_ontology = self.client.ontology('ogms')
         ranges = range(o_ontology.number_of_terms)
         for i in ranges[::size]:
-            self.loader.load_ontology_terms('ogms', i, min(i+size-1, o_ontology.number_of_terms))
+            self.loader.load_ontology_terms('ogms', i, min(i + size - 1, o_ontology.number_of_terms))
         self.loader.final_report('ogms')
         self.assertTrue(isfile('/tmp/ogms_report.log'))
+
+    def testGoTerm(self):
+        self.loader.options['process_relations'] = True
+        self.loader.options['process_parents'] = True
+        with dal.session_scope() as session:
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/GO_0030118",
+                                        ontology_name='go', type=helpers.Term)
+            m_term = self.loader.load_term(o_term, 'go', session)
+            session.add(m_term)
+            self.assertIn('GO:0030117', [rel.parent_term.accession for rel in m_term.parent_terms])
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/GO_0030131",
+                                        ontology_name='go', type=helpers.Term)
+            m_term = self.loader.load_term(o_term, 'go', session)
+            session.add(m_term)
+            self.assertIn('GO:0030119', [rel.parent_term.accession for rel in m_term.parent_terms if
+                                         rel.relation_type.name == 'is_a'])
+            self.assertIn('GO:0030118', [rel.parent_term.accession for rel in m_term.parent_terms if
+                                         rel.relation_type.name == 'part_of'])

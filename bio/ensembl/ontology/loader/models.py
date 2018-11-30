@@ -233,8 +233,8 @@ class Term(LoadAble, Base):
     child_terms = relationship('Relation', foreign_keys='Relation.parent_term_id')
     parent_terms = relationship('Relation', foreign_keys='Relation.child_term_id')
 
-    child_closures = relationship('Closure', foreign_keys='Closure.child_term_id')
-    parent_closures = relationship('Closure', foreign_keys='Closure.parent_term_id')
+    child_closures = relationship('Closure', foreign_keys='Closure.parent_term_id')
+    parent_closures = relationship('Closure', foreign_keys='Closure.child_term_id')
     subparent_closures = relationship('Closure', foreign_keys='Closure.subparent_term_id')
 
     def add_child_relation(self, child_term, rel_type, session):
@@ -243,7 +243,7 @@ class Term(LoadAble, Base):
                                               child_term=child_term,
                                               relation_type=rel_type,
                                               ontology=self.ontology)
-        if created:
+        if relation not in self.child_terms:
             self.child_terms.append(relation)
         return relation
 
@@ -253,7 +253,7 @@ class Term(LoadAble, Base):
                                               child_term=self,
                                               ontology=self.ontology,
                                               relation_type=rel_type)
-        if created:
+        if relation not in self.parent_terms:
             self.parent_terms.append(relation)
         return relation
 
