@@ -195,7 +195,7 @@ class TestOLSLoader(unittest.TestCase):
             o_term = self.client.detail(term)
             m_term = self.loader.load_term(o_term, m_ontology, session)
             session.commit()
-            self.assertGreaterEqual(len(m_term.child_terms), 4)
+            self.assertGreaterEqual(len(m_term.parent_terms), 4)
 
     def testOntologiesList(self):
         self.assertIsInstance(self.loader.allowed_ontologies, list)
@@ -264,8 +264,8 @@ class TestOLSLoader(unittest.TestCase):
             m_term = self.loader.load_term(o_term, 'fypo', session)
             session.add(m_term)
             found = False
-            for relation in m_term.child_terms:
-                found = found or (relation.child_term.accession == 'CHEBI:24431')
+            for relation in m_term.parent_terms:
+                found = found or (relation.parent_term.accession == 'CHEBI:24431')
         self.assertTrue(found)
 
     def testRelatedNonExpected(self):
@@ -308,8 +308,8 @@ class TestOLSLoader(unittest.TestCase):
             m_term = self.loader.load_term(o_term, 'efo', session)
             session.add(m_term)
             found = False
-            for relation in m_term.child_terms:
-                found = found or (relation.child_term.accession == 'OBI:0000245')
+            for relation in m_term.parent_terms:
+                found = found or (relation.parent_term.accession == 'OBI:0000245')
         self.assertTrue(found)
         session = dal.get_session()
         ontologies = session.query(Ontology).count()
