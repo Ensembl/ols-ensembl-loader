@@ -284,7 +284,7 @@ class OlsLoader(object):
                 if m_term.ontology.name in self.allowed_ontologies and self.options.get('process_relations', True) \
                         and process_relation:
                     self.load_term_relations(m_term, o_term, session)
-                if not m_term.is_root and self.options.get('process_parents', True) and process_relation:
+                if not m_term.is_root and self.options.get('process_parents', True):
                     self.load_term_ancestors(m_term, o_term, session)
             return m_term
         else:
@@ -315,9 +315,7 @@ class OlsLoader(object):
                     if created:
                         # avoid call to API if already exists
                         try:
-                            details = self.client.detail(type=helpers.Property,
-                                                         ontology_name=term.ontology.name,
-                                                         iri=subset.iri)
+                            details = self.client.property(identifier=subset.iri)
                             up_subset_def = details.definition or details.annotation.get('comment', [''])[
                                 0] or subset_def if details else subset_def
                             if not details:
@@ -396,7 +394,7 @@ class OlsLoader(object):
                                            process_relation=False)
                 logger.info('Adding relation %s %s %s', m_term.accession, relation_type.name,
                             m_related.accession)
-                m_relation = m_term.add_child_relation(m_related, relation_type, session)
+                m_relation = m_term.add_parent_relation(m_related, relation_type, session)
                 logger.debug('Loaded relation %s %s %s', m_term.accession, relation_type.name, m_related.accession)
                 return m_related, m_relation
             else:
@@ -419,7 +417,6 @@ class OlsLoader(object):
                 if has_accession(ancestor):
                     parent, relation = self.load_term_relation(m_term, ancestor, relation_type, session)
                     if parent:
-                        # self.load_term(parent, ancestor.ontology_name, session)
                         r_ancestors = r_ancestors + 1
             return r_ancestors
         except CoreAPIException as e:
