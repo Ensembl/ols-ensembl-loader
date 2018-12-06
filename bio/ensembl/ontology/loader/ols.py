@@ -68,7 +68,7 @@ class OlsLoader(object):
     )
 
     allowed_ontologies = ['go', 'so', 'pato', 'hp', 'vt', 'efo', 'po', 'eo', 'to', 'chebi', 'pr', 'fypo', 'peco', 'bfo',
-                          'bto', 'cl', 'cmo', 'eco', 'mod', 'mp', 'ogms', 'uo', 'mondo']
+                          'bto', 'cl', 'cmo', 'eco', 'mod', 'mp', 'ogms', 'uo', 'mondo', 'phi']
 
     def __init__(self, url, **options):
         self.db_url = url
