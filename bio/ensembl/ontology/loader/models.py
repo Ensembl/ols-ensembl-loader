@@ -226,7 +226,6 @@ class Term(LoadAble, Base):
 
     is_root = Column(Boolean, nullable=False, default=False)
     is_obsolete = Column(Boolean, nullable=False, default=False)
-    iri = Column(Unicode(1000))
 
     alt_ids = relationship("AltId", back_populates="term", cascade='all')
     synonyms = relationship("Synonym")
