@@ -38,11 +38,17 @@ class DataAccessLayer:
     session = None
 
     def db_init(self, conn_string, **options):
+        extra_params = {}
+        if 'mysql' in conn_string:
+            extra_params = dict(
+                pool_recycle = options.get('pool_recycle', 280),
+                pool_size = options.get('pool_size', 100)
+            )
+
         self.engine = sqlalchemy.create_engine(conn_string,
-                                               pool_recycle=options.get('pool_recycle', 280),
-                                               pool_size=options.get('pool_size', 100),
                                                echo=options.get('echo', False),
                                                encoding='utf8',
+                                               **extra_params,
                                                convert_unicode=True)
         self.options = options or {}
         self.metadata.create_all(self.engine)

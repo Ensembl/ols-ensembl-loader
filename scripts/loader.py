@@ -36,7 +36,7 @@ if __name__ == "__main__":
     logger.debug('Script arguments %s', arguments)
     args = vars(parser.parse_args())
     db_name = 'ensembl_ontology_{}'.format(arguments.release)
-    options = {'drop': not arguments.keep, 'echo': arguments.verbose}
+    options = {'drop': not arguments.keep, 'echo': arguments.verbose, 'db_version': arguments.release}
     if arguments.host_url is None:
         db_url = 'sqlite:///' + expanduser("~") + '/' + db_name + '.sqlite'
         options.update({'pool_size':None})
