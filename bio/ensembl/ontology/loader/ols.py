@@ -139,26 +139,25 @@ class OlsLoader(object):
                                                     namespace=namespace or ontology_name,
                                                     create_method_kwargs={'helper': ontology})
 
-            if created:
-                start = datetime.datetime.now()
-                logger.debug('Updating meta for ontology %s', ontology_name)
-                get_one_or_create(Meta,
-                                  session,
-                                  meta_key=ontology_name + '_load_date',
-                                  create_method_kwargs=dict(
-                                      meta_value=ontology_name.upper() + '/' + start.strftime('%c')))
-                try:
-                    updated_at = datetime.datetime.strptime(ontology.updated, '%Y-%m-%dT%H:%M:%S.%f%z')
-                except ValueError:
-                    # Default update to current date time
-                    updated_at = datetime.datetime.now()
-                meta, created = get_one_or_create(Meta,
-                                                  session,
-                                                  meta_key=ontology.ontology_id + '_file_date',
-                                                  create_method_kwargs=dict(
-                                                      meta_value=ontology.ontology_id.upper() + '/' + updated_at.strftime(
-                                                          '%c')))
-                self.report('- {}/{}'.format(meta.meta_key, meta.meta_value))
+            start = datetime.datetime.now()
+            logger.debug('Updating meta for ontology %s', ontology_name)
+            get_one_or_create(Meta,
+                              session,
+                              meta_key=ontology_name + '_load_date',
+                              create_method_kwargs=dict(
+                                  meta_value=ontology_name.upper() + '/' + start.strftime('%c')))
+            try:
+                updated_at = datetime.datetime.strptime(ontology.updated, '%Y-%m-%dT%H:%M:%S.%f%z')
+            except ValueError:
+                # Default update to current date time
+                updated_at = datetime.datetime.now()
+            meta, created = get_one_or_create(Meta,
+                                              session,
+                                              meta_key=ontology.ontology_id + '_file_date',
+                                              create_method_kwargs=dict(
+                                                  meta_value=ontology.ontology_id.upper() + '/' + updated_at.strftime(
+                                                      '%c')))
+            self.report('- {}/{}'.format(meta.meta_key, meta.meta_value))
             self.report('----------------------------------')
             logger.info('Loaded [%s/%s] %s', m_ontology.name, m_ontology.namespace, m_ontology.title)
             return m_ontology
