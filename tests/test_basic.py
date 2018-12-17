@@ -112,6 +112,7 @@ class TestOLSLoader(unittest.TestCase):
             self.fail('Wrong date format')
 
     def testCascadeDelete(self):
+        self.skipTest('mysql' in self.db_url)
         with dal.session_scope() as session:
             m_ontology = Ontology(name='GO', _namespace='namespace', version='1', title='Ontology test')
             m_ontology_2 = Ontology(name='GO', _namespace='namespace 2', version='1', title='Ontology test 2')

@@ -56,6 +56,8 @@ class DataAccessLayer:
 
     def wipe_schema(self, conn_string):
         engine = sqlalchemy.create_engine(conn_string, echo=False)
+        if not engine:
+            raise RuntimeError("Can't wipe schema prior to init db")
         Base.metadata.drop_all(engine)
 
     def get_session(self):
