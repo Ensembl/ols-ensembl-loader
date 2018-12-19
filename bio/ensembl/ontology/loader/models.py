@@ -15,14 +15,14 @@
 import enum
 import logging
 
+import ebi.ols.api.helpers as helpers
 from sqlalchemy import *
+from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship, synonym
 from sqlalchemy.orm.exc import NoResultFound
-
-import ebi.ols.api.helpers as helpers
 
 logger = logging.getLogger(__name__)
 
@@ -30,18 +30,22 @@ logger = logging.getLogger(__name__)
 SQLAlchemy database models for OLS ontologies loading
  
 """
-__all__ = ['Ontology', 'Meta', 'Term', 'Subset', 'RelationType', 'Closure', 'Relation', 'AltId', 'Synonym',
+__all__ = ['Base', 'Ontology', 'Meta', 'Term', 'Subset', 'RelationType', 'Closure', 'Relation', 'AltId', 'Synonym',
            'SynonymTypeEnum', 'get_one_or_create']
 
-long_string = String(5000)
-long_string = long_string.with_variant(String(5000, collation='utf8_general_ci'), 'mysql')
+StringUtf8 = String(255)
+StringUtf8 = StringUtf8.with_variant(String(255, collation='utf8_general_ci'), 'mysql')
+TextUtf8 = Text()
+TextUtf8 = TextUtf8.with_variant(Text(collation='utf8_general_ci'), 'mysql')
+UnsignedInt = Integer()
+UnsignedInt = UnsignedInt.with_variant(mysql.INTEGER(unsigned=True), 'mysql')
+IntBoolean = Boolean()
+IntBoolean = IntBoolean.with_variant(mysql.BOOLEAN(), 'mysql')
+UnsignedTinyInt = Integer()
+UnsignedTinyInt = UnsignedTinyInt.with_variant(mysql.TINYINT(unsigned=True), 'mysql')
 
 
-def get_one_or_create(model,
-                      session=None,
-                      create_method='',
-                      create_method_kwargs=None,
-                      **kwargs):
+def get_one_or_create(model, session=None, create_method='', create_method_kwargs=None, **kwargs):
     create_kwargs = create_method_kwargs or {}
     q = 'undefined'
     try:
@@ -70,17 +74,20 @@ def get_one_or_create(model,
             return session.query(model).filter_by(**kwargs).one(), False
 
 
+Base = declarative_base()
+
+
 class SynonymTypeEnum(enum.Enum):
+    """ Enumerated values for Synonym types """
     EXACT = 'EXACT'
     BROAD = 'BROAD'
     NARROW = 'NARROW'
     RELATED = 'RELATED'
 
 
-Base = declarative_base()
-
-
 class LoadAble(object):
+    """ Allow loading any SqlAlchemy Entity from related ols client Helpers classes
+    """
     _load_map = dict()
 
     def __init__(self, helper=None, **kwargs):
@@ -110,20 +117,24 @@ class Meta(Base):
     __tablename__ = 'meta'
     __table_args__ = (
         Index('key_value_idx', 'meta_key', 'meta_value', unique=True),
-        {'mysql_engine': 'MyISAM'}
+        {'mysql_engine': 'MyISAM',
+         'mysql_DEFAULT_CHARSET': 'utf8',
+         'mysql_COLLATE': 'utf8_unicode_ci'}
     )
 
-    meta_id = Column(Integer, primary_key=True)
+    meta_id = Column(UnsignedInt, primary_key=True)
     meta_key = Column(String(64), nullable=False, )
     meta_value = Column(String(128))
-    species_id = Column(Integer)
+    species_id = Column(UnsignedInt, nullable=True, default=None, server_default=text('NULL'))
 
 
 class Ontology(LoadAble, Base):
     __tablename__ = 'ontology'
     __table_args__ = (
-        Index('name_namespace_idx', 'name', 'namespace', unique=True),
-        {'mysql_engine': 'MyISAM'}
+        Index('ontology_name_namespace_idx', 'name', 'namespace', unique=True),
+        {'mysql_engine': 'MyISAM',
+         'mysql_DEFAULT_CHARSET': 'utf8',
+         'mysql_COLLATE': 'utf8_unicode_ci'}
     )
 
     _load_map = dict(
@@ -133,11 +144,11 @@ class Ontology(LoadAble, Base):
     def __dir__(self):
         return ['id', 'name', 'namespace', 'version', 'title', 'number_of_terms']
 
-    id = Column('ontology_id', Integer, primary_key=True)
+    id = Column('ontology_id', UnsignedInt, primary_key=True)
     name = Column('name', String(64), nullable=False)
     _namespace = Column('namespace', String(64), nullable=False)
-    _version = Column('data_version', String(64), nullable=True)
-    title = Column(String(255), nullable=True)
+    _version = Column('data_version', String(64), nullable=True, server_default=text('NULL'))
+    title = Column(String(255), nullable=True, server_default=text('NULL'))
 
     terms = relationship('Term', cascade="all, delete", backref="ontology")
 
@@ -172,24 +183,12 @@ class Ontology(LoadAble, Base):
     version = synonym('_version', descriptor=version)
 
 
-class RelationType(LoadAble, Base):
-    __tablename__ = 'relation_type'
-
-    __table_args__ = (
-        {'mysql_engine': 'MyISAM'}
-    )
-
-    def __dir__(self):
-        return ['relation_type_id', 'name']
-
-    relation_type_id = Column(Integer, primary_key=True)
-    name = Column(String(64), nullable=False, unique=True)
-
-
 class Subset(LoadAble, Base):
     __tablename__ = 'subset'
     __table_args__ = (
-        {'mysql_engine': 'MyISAM'}
+        {'mysql_engine': 'MyISAM',
+         'mysql_DEFAULT_CHARSET': 'utf8',
+         'mysql_COLLATE': 'utf8_unicode_ci'}
     )
 
     _load_map = dict(
@@ -199,15 +198,15 @@ class Subset(LoadAble, Base):
     def __dir__(self):
         return ['subset_id', 'name', 'definition']
 
-    subset_id = Column(Integer, primary_key=True)
+    subset_id = Column(UnsignedInt, primary_key=True)
     name = Column(String(64, convert_unicode=True), nullable=False, unique=True)
-    definition = Column(Unicode(1000), nullable=False, server_default=text("''"))
+    definition = Column(Unicode(511), nullable=False, server_default=text("''"))
 
 
 class Term(LoadAble, Base):
     __tablename__ = 'term'
     __table_args__ = (
-        Index('ontology_acc_idx', 'ontology_id', 'accession', unique=True),
+        Index('term_ontology_acc_idx', 'ontology_id', 'accession', unique=True),
         Index('term_name_idx', 'name', mysql_length=100),
         {'mysql_engine': 'MyISAM'}
     )
@@ -216,17 +215,16 @@ class Term(LoadAble, Base):
         return ['term_id', 'name', 'ontology_id', 'subsets', 'accession', 'description', 'is_root', 'is_obsolete',
                 'iri', 'ontology']
 
-    term_id = Column(Integer, primary_key=True)
+    term_id = Column(UnsignedInt, primary_key=True)
     ontology_id = Column(ForeignKey(Ontology.id), nullable=False)
-    subsets = Column(Unicode(1000))
+    subsets = Column(Text)
     accession = Column(String(64), nullable=False, unique=True)
-    name = Column(long_string, nullable=False)
+    name = Column(StringUtf8, nullable=False)
+    description = Column('definition', TextUtf8)
 
-    description = Column('definition', long_string)
-
-    is_root = Column(Boolean, nullable=False, default=False)
-    is_obsolete = Column(Boolean, nullable=False, default=False)
-    iri = Column(Unicode(1000))
+    is_root = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    is_obsolete = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    iri = Column(Text, nullable=True)
 
     alt_ids = relationship("AltId", back_populates="term", cascade='all')
     synonyms = relationship("Synonym")
@@ -264,6 +262,29 @@ class Term(LoadAble, Base):
         return childs + parents + subparents
 
 
+class Synonym(LoadAble, Base):
+    __tablename__ = 'synonym'
+    __table_args__ = (
+        Index('synonym_term_idx', 'term_id', 'synonym_id', unique=True),
+        Index('synonym_name_idx', 'name', mysql_length=100),
+        {'mysql_engine': 'MyISAM',
+         'mysql_DEFAULT_CHARSET': 'utf8',
+         'mysql_COLLATE': 'utf8_unicode_ci'}
+    )
+
+    synonym_id = Column(UnsignedInt, primary_key=True)
+    term_id = Column(ForeignKey('term.term_id'), nullable=False)
+    name = Column('name', TextUtf8, nullable=False)
+    type = Column(Enum(SynonymTypeEnum))
+    db_xref = Column('dbxref', Unicode(500), nullable=True, server_default=text('NULL'))
+
+    term = relationship('Term', back_populates='synonyms')
+
+    def __repr__(self):
+        return '<Synonym(synonym_id={}, term_id={}, name={}, type={})>'.format(
+            self.synonym_id, self.term_id, self.name, self.type)
+
+
 class AltId(LoadAble, Base):
     __tablename__ = 'alt_id'
     __table_args__ = (
@@ -274,46 +295,31 @@ class AltId(LoadAble, Base):
     def __dir__(self):
         return ['alt_id', 'term_id', 'accession']
 
-    alt_id = Column(Integer, primary_key=True)
+    alt_id = Column(UnsignedInt, primary_key=True)
     term_id = Column(ForeignKey('term.term_id'), nullable=False)
     accession = Column(String(64), nullable=False, index=True)
 
     term = relationship('Term', back_populates='alt_ids')
 
 
-class Closure(LoadAble, Base):
-    # NOT USE for now, closure is computed by perl standard script
-    __tablename__ = 'closure'
+class RelationType(LoadAble, Base):
+    __tablename__ = 'relation_type'
+
     __table_args__ = (
-        Index('child_parent_idx', 'child_term_id', 'parent_term_id', 'subparent_term_id', 'ontology_id', unique=True),
-        Index('parent_subparent_idx', 'parent_term_id', 'subparent_term_id'),
         {'mysql_engine': 'MyISAM'}
     )
 
     def __dir__(self):
-        return ['closure_id', 'ontology', 'child_term_id', 'parent_term_id']
+        return ['relation_type_id', 'name']
 
-    closure_id = Column(Integer, primary_key=True)
-    child_term_id = Column(ForeignKey('term.term_id'), nullable=False)
-    parent_term_id = Column(ForeignKey('term.term_id'), nullable=False)
-    subparent_term_id = Column(ForeignKey('term.term_id'), index=True)
-    distance = Column(Integer, nullable=False)
-    ontology_id = Column(ForeignKey('ontology.ontology_id'), nullable=False, index=True)
-    confident_relationship = Column(Integer, nullable=False, server_default=text("'0'"))
-
-    ontology = relationship('Ontology')
-    child_term = relationship('Term', primaryjoin='Closure.child_term_id == Term.term_id',
-                              back_populates='child_closures')
-    parent_term = relationship('Term', primaryjoin='Closure.parent_term_id == Term.term_id',
-                               back_populates='parent_closures')
-    subparent_term = relationship('Term', primaryjoin='Closure.subparent_term_id == Term.term_id',
-                                  back_populates='subparent_closures')
+    relation_type_id = Column(UnsignedInt, primary_key=True)
+    name = Column(String(64), nullable=False, unique=True)
 
 
 class Relation(LoadAble, Base):
     __tablename__ = 'relation'
     __table_args__ = (
-        Index('child_parent__term_idx', 'child_term_id', 'parent_term_id', 'relation_type_id', 'intersection_of',
+        Index('child_parent_idx', 'child_term_id', 'parent_term_id', 'relation_type_id', 'intersection_of',
               'ontology_id', unique=True),
         {'mysql_engine': 'MyISAM'}
     )
@@ -321,11 +327,11 @@ class Relation(LoadAble, Base):
     def __dir__(self):
         return ['relation_id', 'ontology', 'relation_type', 'parent_term', 'child_term']
 
-    relation_id = Column(Integer, primary_key=True)
+    relation_id = Column(UnsignedInt, primary_key=True)
     child_term_id = Column(ForeignKey('term.term_id'), nullable=False)
     parent_term_id = Column(ForeignKey('term.term_id'), nullable=False, index=True)
     relation_type_id = Column(ForeignKey('relation_type.relation_type_id'), nullable=False, index=True)
-    intersection_of = Column(Boolean, nullable=False, server_default=text("'0'"))
+    intersection_of = Column(UnsignedTinyInt, nullable=False, default=0, server_default=text('0'))
     ontology_id = Column(ForeignKey('ontology.ontology_id'), nullable=False, index=True)
 
     child_term = relationship('Term', primaryjoin='Relation.child_term_id == Term.term_id',
@@ -340,22 +346,31 @@ class Relation(LoadAble, Base):
             self.relation_id, self.child_term.accession, self.parent_term.accession, self.relation_type.name)
 
 
-class Synonym(LoadAble, Base):
-    __tablename__ = 'synonym'
+class Closure(LoadAble, Base):
+    # NOT USE for now, closure is computed by perl standard script
+    __tablename__ = 'closure'
     __table_args__ = (
-        Index('term_synonym_idx', 'term_id', 'synonym_id', unique=True),
+        Index('closure_child_parent_idx', 'child_term_id', 'parent_term_id', 'subparent_term_id', 'ontology_id',
+              unique=True),
+        Index('parent_subparent_idx', 'parent_term_id', 'subparent_term_id'),
         {'mysql_engine': 'MyISAM'}
-        # Index('term_name_idx', 'name', mysql_length=2048),
     )
 
-    synonym_id = Column(Integer, primary_key=True)
-    term_id = Column(ForeignKey('term.term_id'), nullable=False)
-    name = Column('name', long_string, nullable=False)
-    type = Column(Enum(SynonymTypeEnum))
-    db_xref = Column('dbxref', Unicode(500), nullable=True)
+    def __dir__(self):
+        return ['closure_id', 'ontology', 'child_term_id', 'parent_term_id']
 
-    term = relationship('Term', back_populates='synonyms')
+    closure_id = Column(UnsignedInt, primary_key=True)
+    child_term_id = Column(ForeignKey('term.term_id'), nullable=False)
+    parent_term_id = Column(ForeignKey('term.term_id'), nullable=False)
+    subparent_term_id = Column(ForeignKey('term.term_id'), index=True)
+    distance = Column(UnsignedTinyInt, nullable=False)
+    ontology_id = Column(ForeignKey('ontology.ontology_id'), nullable=False, index=True)
+    confident_relationship = Column(BOOLEAN, nullable=False, default=0, server_default=text('0'))
 
-    def __repr__(self):
-        return '<Synonym(synonym_id={}, term_id={}, name={}, type={})>'.format(
-            self.synonym_id, self.term_id, self.name, self.type)
+    ontology = relationship('Ontology')
+    child_term = relationship('Term', primaryjoin='Closure.child_term_id == Term.term_id',
+                              back_populates='child_closures')
+    parent_term = relationship('Term', primaryjoin='Closure.parent_term_id == Term.term_id',
+                               back_populates='parent_closures')
+    subparent_term = relationship('Term', primaryjoin='Closure.subparent_term_id == Term.term_id',
+                                  back_populates='subparent_closures')

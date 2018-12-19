@@ -24,7 +24,7 @@ from sqlalchemy.orm.exc import NoResultFound
 
 import ebi.ols.api.exceptions
 import ebi.ols.api.helpers as helpers
-from bio.ensembl.ontology.loader.db import *
+from bio.ensembl.ontology.loader.db import dal
 from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
 
@@ -254,7 +254,7 @@ class OlsLoader(object):
                 self.report(*report_msg)
                 self.report('- Expected %s terms (defined in ontology)', nb_terms)
                 self.report('- Ignored %s terms (not defined in ontology)', nb_terms_ignored)
-                return nb_terms
+                return nb_terms, nb_terms_ignored
         return None
 
     def load_term(self, o_term, ontology, session, process_relation=True):
@@ -267,7 +267,10 @@ class OlsLoader(object):
         else:
             raise RuntimeError('Wrong parameter')
         session.add(m_ontology)
+
         if has_accession(o_term):
+            if not o_term.description:
+                o_term.description = [inflection.humanize(o_term.label)]
             m_term, created = get_one_or_create(Term,
                                                 session,
                                                 accession=o_term.accession,
