@@ -208,7 +208,9 @@ class Term(LoadAble, Base):
     __table_args__ = (
         Index('term_ontology_acc_idx', 'ontology_id', 'accession', unique=True),
         Index('term_name_idx', 'name', mysql_length=100),
-        {'mysql_engine': 'MyISAM'}
+        {'mysql_engine': 'MyISAM',
+         'mysql_DEFAULT_CHARSET': 'utf8',
+         'mysql_COLLATE': 'utf8_unicode_ci'}
     )
 
     def __dir__(self):
@@ -306,7 +308,9 @@ class RelationType(LoadAble, Base):
     __tablename__ = 'relation_type'
 
     __table_args__ = (
-        {'mysql_engine': 'MyISAM'}
+        {'mysql_engine': 'MyISAM',
+         'mysql_DEFAULT_CHARSET': 'utf8',
+         'mysql_COLLATE': 'utf8_unicode_ci'}
     )
 
     def __dir__(self):
