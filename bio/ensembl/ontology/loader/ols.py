@@ -311,11 +311,8 @@ class OlsLoader(object):
             unique_subsets = [x for x in s_subsets if
                               x.short_form.lower() not in seen and not seen.add(x.short_form.lower())]
             for subset in unique_subsets:
-                subset_def = inflection.humanize(subset.label)
                 m_subset, created = get_one_or_create(Subset, session,
-                                                      name=subset.label,
-                                                      create_method_kwargs=dict(
-                                                          definition=subset_def))
+                                                      name=subset.label)
                 if created:
                     # avoid call to API if already exists
                     try:
@@ -323,10 +320,11 @@ class OlsLoader(object):
                         if not details:
                             logger.warning('Unable to retrieve subset details %s for ontology %s', subset.label,
                                            term.ontology.name)
+                            m_subset.definition = inflection.humanize(subset.label)
                         else:
                             m_subset.definition = details.definition
-                            session.merge(m_subset)
-                            session.commit()
+                        session.merge(m_subset)
+                        session.commit()
                     except ebi.ols.api.exceptions.ObjectNotRetrievedError:
                         logger.error('Too Many errors from API %s %s', subset.label, term.ontology.name)
             logger.info('Loaded subsets: %s ', subsets)

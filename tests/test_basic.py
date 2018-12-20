@@ -20,10 +20,11 @@ from os import getenv
 from os.path import isfile
 
 import ebi.ols.api.helpers as helpers
-from bio.ensembl.ontology.loader.ols import OlsLoader
+from ebi.ols.api.client import OlsClient
+
 from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
-from ebi.ols.api.client import OlsClient
+from bio.ensembl.ontology.loader.ols import OlsLoader
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
@@ -49,7 +50,8 @@ class TestOLSLoader(unittest.TestCase):
         self.client = OlsClient()
 
     def tearDown(self):
-        dal.wipe_schema(self.db_url)
+        # dal.wipe_schema(self.db_url)
+        pass
 
     def testLoadOntology(self):
         # test retrieve
@@ -391,3 +393,35 @@ class TestOLSLoader(unittest.TestCase):
         session = dal.get_session()
         subsets = session.query(Subset).all()
         [self.assertNotEqual(subset.definition, subset.name) for subset in subsets]
+
+    def testPropertiesRetrieval(self):
+        subsets = ['goantislim_grouping',
+                   'gocheck_do_not_annotate',
+                   'gocheck_do_not_manually_annotate',
+                   'goslim_agr',
+                   'goslim_aspergillus',
+                   'goslim_candida',
+                   'goslim_chembl',
+                   'goslim_generic',
+                   'goslim_mouse',
+                   'goslim_pir',
+                   'goslim_plant',
+                   'goslim_pombe',
+                   'goslim_synapse',
+                   'goslim_virus',
+                   'goslim_yeast',
+                   'gosubset_prok']
+        with dal.session_scope() as session:
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/ECO_0000305",
+                                        ontology_name='eco', type=helpers.Term)
+            o_term.in_subset = subsets
+            self.loader.load_term(o_term, 'eco', session, False)
+            list_def = [subset.definition for subset in
+                        session.query(Subset).filter(Subset.name.like('go%')).order_by(Subset.subset_id)]
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/MONDO_0020003",
+                                        ontology_name='mondo', type=helpers.Term)
+            o_term.in_subset = subsets
+            self.loader.load_term(o_term, 'eco', session, False)
+            list_def2 = [subset.definition for subset in
+                         session.query(Subset).filter(Subset.name.like('go%')).order_by(Subset.subset_id)]
+            self.assertListEqual(list_def, list_def2)
