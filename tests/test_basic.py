@@ -18,9 +18,6 @@ import unittest
 import warnings
 from os import getenv
 from os.path import isfile
-import inflection
-import sqlalchemy
-
 
 import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.loader.ols import OlsLoader
@@ -28,7 +25,7 @@ from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
                     datefmt='%m-%d %H:%M:%S')
 
@@ -243,7 +240,7 @@ class TestOLSLoader(unittest.TestCase):
             subset = helpers.Property(ontology_name='go',
                                       iri='http://www.geneontology.org/formats/oboInOwl#hasBroadSynonym')
             details = self.client.detail(subset)
-            self.assertIsNone(details.definition, '')
+            self.assertNotEqual(details.definition, '')
 
     def testAltIds(self):
         self.loader.options['process_relations'] = False
@@ -351,13 +348,13 @@ class TestOLSLoader(unittest.TestCase):
                                         ontology_name='uberon', type=helpers.Term)
             m_term = self.loader.load_term(o_term, 'uberon', session)
             for syn in m_term.synonyms:
-                print(syn)
+                self.assertNotEqual(syn.name, '')
 
             o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/MONDO_0004933",
                                         ontology_name='mondo', type=helpers.Term)
             m_term = self.loader.load_term(o_term, 'mondo', session)
             for syn in m_term.synonyms:
-                print(syn)
+                self.assertNotEqual(syn.name, '')
 
     def testTermNoDefinition(self):
         '''

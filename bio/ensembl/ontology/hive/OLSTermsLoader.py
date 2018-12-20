@@ -14,12 +14,10 @@
 """
 # @author Marc Chakiachvili
 import logging
-from os.path import join
-from urllib import parse
-
-logger = logging.getLogger(__name__)
 
 from .OLSHiveLoader import OLSHiveLoader
+
+logger = logging.getLogger(__name__)
 
 
 class OLSTermsLoader(OLSHiveLoader):

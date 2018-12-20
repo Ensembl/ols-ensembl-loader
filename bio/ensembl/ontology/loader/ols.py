@@ -306,29 +306,27 @@ class OlsLoader(object):
     def load_term_subsets(self, term, session):
         subsets = []
         if term.subsets:
-            s_subsets = self.client.search(query=term.subsets, filters={'type': 'property'})
-            if s_subsets:
-                for subset in s_subsets:
-                    subset_def = inflection.humanize(subset.label)
-                    m_subset, created = get_one_or_create(Subset, session,
-                                                          name=subset.label,
-                                                          create_method_kwargs=dict(
-                                                              definition=subset_def))
-                    if created:
-                        # avoid call to API if already exists
-                        try:
-                            details = self.client.property(identifier=subset.iri)
-                            up_subset_def = details.definition or details.annotation.get('comment', [''])[
-                                0] or subset_def if details else subset_def
-                            if not details:
-                                logger.warning('Unable to retrieve subset details %s for ontology %s', subset.label,
-                                               term.ontology.name)
-                            m_subset.definition = up_subset_def
+            s_subsets = self.client.search(query=term.subsets, type='property')
+            for subset in s_subsets:
+                subset_def = inflection.humanize(subset.label)
+                m_subset, created = get_one_or_create(Subset, session,
+                                                      name=subset.label,
+                                                      create_method_kwargs=dict(
+                                                          definition=subset_def))
+                if created:
+                    # avoid call to API if already exists
+                    try:
+                        details = self.client.property(identifier=subset.iri)
+                        if not details:
+                            logger.warning('Unable to retrieve subset details %s for ontology %s', subset.label,
+                                           term.ontology.name)
+                        else:
+                            m_subset.definition = details.definition
                             session.merge(m_subset)
-                        except ebi.ols.api.exceptions.ObjectNotRetrievedError:
-                            logger.error('Too Many errors from API %s %s', subset.label, term.ontology.name)
-                    subsets.append(subset)
-                logger.info('Loaded subsets: %s ', subsets)
+                    except ebi.ols.api.exceptions.ObjectNotRetrievedError:
+                        logger.error('Too Many errors from API %s %s', subset.label, term.ontology.name)
+                subsets.append(subset)
+            logger.info('Loaded subsets: %s ', subsets)
         else:
             logger.info('...No Subset')
         return subsets

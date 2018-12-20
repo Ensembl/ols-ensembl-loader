@@ -35,6 +35,8 @@ __all__ = ['Base', 'Ontology', 'Meta', 'Term', 'Subset', 'RelationType', 'Closur
 
 StringUtf8 = String(255)
 StringUtf8 = StringUtf8.with_variant(String(255, collation='utf8_general_ci'), 'mysql')
+BigStringUtf8 = String(1023)
+BigStringUtf8 = BigStringUtf8.with_variant(String(1023, collation='utf8_general_ci'), 'mysql')
 TextUtf8 = Text()
 TextUtf8 = TextUtf8.with_variant(Text(collation='utf8_general_ci'), 'mysql')
 UnsignedInt = Integer()
@@ -221,7 +223,7 @@ class Term(LoadAble, Base):
     ontology_id = Column(ForeignKey(Ontology.id), nullable=False)
     subsets = Column(Text)
     accession = Column(String(64), nullable=False, unique=True)
-    name = Column(StringUtf8, nullable=False)
+    name = Column(BigStringUtf8, nullable=False)
     description = Column('definition', TextUtf8)
 
     is_root = Column(Integer, nullable=False, default=0, server_default=text("0"))
@@ -308,9 +310,7 @@ class RelationType(LoadAble, Base):
     __tablename__ = 'relation_type'
 
     __table_args__ = (
-        {'mysql_engine': 'MyISAM',
-         'mysql_DEFAULT_CHARSET': 'utf8',
-         'mysql_COLLATE': 'utf8_unicode_ci'}
+        {'mysql_engine': 'MyISAM'}
     )
 
     def __dir__(self):

@@ -37,7 +37,7 @@ CREATE TABLE relation_type (
 	name VARCHAR(64) NOT NULL, 
 	PRIMARY KEY (relation_type_id), 
 	UNIQUE (name)
-)ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE utf8_unicode_ci
+)ENGINE=MyISAM
 
 
 
@@ -54,11 +54,11 @@ CREATE TABLE term (
 	PRIMARY KEY (term_id), 
 	FOREIGN KEY(ontology_id) REFERENCES ontology (ontology_id), 
 	UNIQUE (accession)
-)ENGINE=MyISAM
+)ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE utf8_unicode_ci
 
 
-CREATE INDEX term_name_idx ON term (name(100))
 CREATE UNIQUE INDEX term_ontology_acc_idx ON term (ontology_id, accession)
+CREATE INDEX term_name_idx ON term (name(100))
 
 CREATE TABLE synonym (
 	synonym_id INTEGER UNSIGNED NOT NULL AUTO_INCREMENT, 
@@ -71,8 +71,8 @@ CREATE TABLE synonym (
 )ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE utf8_unicode_ci
 
 
-CREATE UNIQUE INDEX synonym_term_idx ON synonym (term_id, synonym_id)
 CREATE INDEX synonym_name_idx ON synonym (name(100))
+CREATE UNIQUE INDEX synonym_term_idx ON synonym (term_id, synonym_id)
 
 CREATE TABLE alt_id (
 	alt_id INTEGER UNSIGNED NOT NULL AUTO_INCREMENT, 
@@ -101,10 +101,10 @@ CREATE TABLE relation (
 )ENGINE=MyISAM
 
 
-CREATE INDEX ix_relation_relation_type_id ON relation (relation_type_id)
-CREATE UNIQUE INDEX child_parent_idx ON relation (child_term_id, parent_term_id, relation_type_id, intersection_of, ontology_id)
 CREATE INDEX ix_relation_ontology_id ON relation (ontology_id)
 CREATE INDEX ix_relation_parent_term_id ON relation (parent_term_id)
+CREATE UNIQUE INDEX child_parent_idx ON relation (child_term_id, parent_term_id, relation_type_id, intersection_of, ontology_id)
+CREATE INDEX ix_relation_relation_type_id ON relation (relation_type_id)
 
 CREATE TABLE closure (
 	closure_id INTEGER UNSIGNED NOT NULL AUTO_INCREMENT, 
@@ -123,7 +123,7 @@ CREATE TABLE closure (
 )ENGINE=MyISAM
 
 
-CREATE UNIQUE INDEX closure_child_parent_idx ON closure (child_term_id, parent_term_id, subparent_term_id, ontology_id)
 CREATE INDEX parent_subparent_idx ON closure (parent_term_id, subparent_term_id)
 CREATE INDEX ix_closure_subparent_term_id ON closure (subparent_term_id)
 CREATE INDEX ix_closure_ontology_id ON closure (ontology_id)
+CREATE UNIQUE INDEX closure_child_parent_idx ON closure (child_term_id, parent_term_id, subparent_term_id, ontology_id)
