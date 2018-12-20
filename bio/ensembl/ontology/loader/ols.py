@@ -320,7 +320,6 @@ class OlsLoader(object):
                     # avoid call to API if already exists
                     try:
                         details = self.client.property(identifier=subset.iri)
-                        print(details.definition)
                         if not details:
                             logger.warning('Unable to retrieve subset details %s for ontology %s', subset.label,
                                            term.ontology.name)

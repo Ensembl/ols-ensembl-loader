@@ -120,7 +120,8 @@ class TestOLSLoader(unittest.TestCase):
             self.fail('Wrong date format')
 
     def testCascadeDelete(self):
-        self.skipTest('mysql' in self.db_url)
+        if 'mysql' not in self.db_url:
+            self.skipTest('Only with mysql')
         with dal.session_scope() as session:
             m_ontology = Ontology(name='GO', _namespace='namespace', version='1', title='Ontology test')
             m_ontology_2 = Ontology(name='GO', _namespace='namespace 2', version='1', title='Ontology test 2')
@@ -389,5 +390,4 @@ class TestOLSLoader(unittest.TestCase):
         self.loader.load_ontology_terms('chebi', start=1200, end=1250)
         session = dal.get_session()
         subsets = session.query(Subset).all()
-        print(subsets)
         [self.assertNotEqual(subset.definition, subset.name) for subset in subsets]
