@@ -40,6 +40,7 @@ class TestOLSLoader(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        dal.wipe_schema(cls.db_url)
         logger.info('Using %s connexion string', cls.db_url)
 
     def setUp(self):
@@ -49,7 +50,6 @@ class TestOLSLoader(unittest.TestCase):
 
     def tearDown(self):
         dal.wipe_schema(self.db_url)
-        pass
 
     def testLoadOntology(self):
         # test retrieve
@@ -63,6 +63,7 @@ class TestOLSLoader(unittest.TestCase):
             logger.info('number of Terms %s', m_ontology.number_of_terms)
             r_ontology = session.query(Ontology).filter_by(name=ontology_name,
                                                            namespace='cvdo').one()
+            ontology_id = r_ontology.id
             logger.info('(RE) Loaded ontology %s', r_ontology)
             self.assertEqual(m_ontology.name, r_ontology.name)
             self.assertEqual(m_ontology.version, r_ontology.version)
@@ -83,14 +84,14 @@ class TestOLSLoader(unittest.TestCase):
             self.assertTrue(new_ontology.name == r_ontology.name)
 
         session = dal.get_session()
-        self.assertEqual(5, session.query(Term).count())
+        self.assertEqual(5, session.query(Term).filter_by(ontology_id=ontology_id).count())
         ontologies = session.query(Ontology).filter_by(name=ontology_name)
         self.assertEqual(ontologies.count(), 2)
 
     def testLoadOntologyTerms(self):
         session = dal.get_session()
         ontology_name = 'cio'
-        onto = self.loader.load_ontology(ontology_name)
+        self.loader.load_ontology(ontology_name)
         expected, ignored = self.loader.load_ontology_terms(ontology_name)
         logger.info('Expected terms %s', expected)
         s_terms = session.query(Term).filter(Ontology.name == ontology_name)
@@ -119,7 +120,8 @@ class TestOLSLoader(unittest.TestCase):
             self.fail('Wrong date format')
 
     def testCascadeDelete(self):
-        self.skipTest('mysql' in self.db_url)
+        if 'mysql' not in self.db_url:
+            self.skipTest('Only with mysql')
         with dal.session_scope() as session:
             m_ontology = Ontology(name='GO', _namespace='namespace', version='1', title='Ontology test')
             m_ontology_2 = Ontology(name='GO', _namespace='namespace 2', version='1', title='Ontology test 2')
@@ -311,9 +313,9 @@ class TestOLSLoader(unittest.TestCase):
                 found = found or (relation.parent_term.accession == 'OBI:0000245')
         self.assertTrue(found)
         session = dal.get_session()
-        ontologies = session.query(Ontology).count()
+        ontologies = session.query(Ontology).filter_by(name='obi').count()
         # assert that OBI has not been inserted
-        self.assertEqual(1, ontologies)
+        self.assertEqual(0, ontologies)
 
     def testReport(self):
         o_ontology = self.client.ontology('ogms')
@@ -381,3 +383,11 @@ class TestOLSLoader(unittest.TestCase):
             term_subsets = m_term.subsets.split(',')
             self.assertSetEqual(set(term_subsets), set(subsets_name))
             [self.assertIsNotNone(definition) for definition in subsets]
+
+    def testChebi(self):
+        self.loader.options['process_relations'] = False
+        self.loader.options['process_parents'] = False
+        self.loader.load_ontology_terms('chebi', start=1200, end=1250)
+        session = dal.get_session()
+        subsets = session.query(Subset).all()
+        [self.assertNotEqual(subset.definition, subset.name) for subset in subsets]

@@ -307,7 +307,10 @@ class OlsLoader(object):
         subsets = []
         if term.subsets:
             s_subsets = self.client.search(query=term.subsets, type='property')
-            for subset in s_subsets:
+            seen = set()
+            unique_subsets = [x for x in s_subsets if
+                              x.short_form.lower() not in seen and not seen.add(x.short_form.lower())]
+            for subset in unique_subsets:
                 subset_def = inflection.humanize(subset.label)
                 m_subset, created = get_one_or_create(Subset, session,
                                                       name=subset.label,
@@ -323,9 +326,9 @@ class OlsLoader(object):
                         else:
                             m_subset.definition = details.definition
                             session.merge(m_subset)
+                            session.commit()
                     except ebi.ols.api.exceptions.ObjectNotRetrievedError:
                         logger.error('Too Many errors from API %s %s', subset.label, term.ontology.name)
-                subsets.append(subset)
             logger.info('Loaded subsets: %s ', subsets)
         else:
             logger.info('...No Subset')
