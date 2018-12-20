@@ -16,9 +16,7 @@ import contextlib
 import logging
 
 import sqlalchemy
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.orm.exc import NoResultFound
 
 from .models import Base
 
@@ -41,8 +39,8 @@ class DataAccessLayer:
         extra_params = {}
         if 'mysql' in conn_string:
             extra_params = dict(
-                pool_recycle = options.get('pool_recycle', 280),
-                pool_size = options.get('pool_size', 100)
+                pool_recycle=options.get('pool_recycle', 280),
+                pool_size=options.get('pool_size', 100)
             )
 
         self.engine = sqlalchemy.create_engine(conn_string,
@@ -85,6 +83,3 @@ class DataAccessLayer:
 
 
 dal = DataAccessLayer()
-
-
-

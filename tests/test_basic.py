@@ -20,7 +20,7 @@ from os import getenv
 from os.path import isfile
 
 import ebi.ols.api.helpers as helpers
-from bio.ensembl.ontology.loader import OlsLoader
+from bio.ensembl.ontology.loader.ols import OlsLoader
 from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
 from ebi.ols.api.client import OlsClient
@@ -38,11 +38,18 @@ class TestOLSLoader(unittest.TestCase):
     _multiprocess_shared_ = False
     db_url = getenv('DB_TEST_URL', 'sqlite://')
 
+    @classmethod
+    def setUpClass(cls):
+        logger.info('Using %s connexion string', cls.db_url)
+
     def setUp(self):
-        dal.wipe_schema(self.db_url)
         warnings.simplefilter("ignore", ResourceWarning)
-        self.loader = OlsLoader(self.db_url, echo=False)
+        self.loader = OlsLoader(self.db_url, echo=False, output_dir='/tmp')
         self.client = OlsClient()
+
+    def tearDown(self):
+        dal.wipe_schema(self.db_url)
+        pass
 
     def testLoadOntology(self):
         # test retrieve
@@ -84,7 +91,7 @@ class TestOLSLoader(unittest.TestCase):
         session = dal.get_session()
         ontology_name = 'cio'
         onto = self.loader.load_ontology(ontology_name)
-        expected = self.loader.load_ontology_terms(ontology_name)
+        expected, ignored = self.loader.load_ontology_terms(ontology_name)
         logger.info('Expected terms %s', expected)
         s_terms = session.query(Term).filter(Ontology.name == ontology_name)
         inserted = s_terms.count()
@@ -173,6 +180,7 @@ class TestOLSLoader(unittest.TestCase):
         term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0005645')
         o_term = self.client.detail(term)
         m_term = self.loader.load_term(o_term, m_ontology, session)
+        dal.get_session().commit()
         self.assertIn('λ', m_term.description)
 
     def testSingleTerm(self):
@@ -232,7 +240,7 @@ class TestOLSLoader(unittest.TestCase):
             subset = helpers.Property(ontology_name='go',
                                       iri='http://www.geneontology.org/formats/oboInOwl#hasBroadSynonym')
             details = self.client.detail(subset)
-            self.assertIsNone(details.definition, '')
+            self.assertNotEqual(details.definition, '')
 
     def testAltIds(self):
         self.loader.options['process_relations'] = False
@@ -262,7 +270,7 @@ class TestOLSLoader(unittest.TestCase):
     def testRelatedNonExpected(self):
         with dal.session_scope() as session:
             ontology_name = 'eco'
-            expected = self.loader.load_ontology_terms(ontology_name, start=0, end=50)
+            expected, ignored = self.loader.load_ontology_terms(ontology_name, start=0, end=50)
             logger.info('Expected terms %s', expected)
             s_terms = session.query(Term).filter(Ontology.name == ontology_name)
             inserted = s_terms.count()
@@ -308,12 +316,9 @@ class TestOLSLoader(unittest.TestCase):
         self.assertEqual(1, ontologies)
 
     def testReport(self):
-        size = 100
-        self.loader = OlsLoader(self.db_url, page_size=size, output_dir='/tmp')
         o_ontology = self.client.ontology('ogms')
         ranges = range(o_ontology.number_of_terms)
-        for i in ranges[::size]:
-            self.loader.load_ontology_terms('ogms', i, min(i + size - 1, o_ontology.number_of_terms))
+        self.loader.load_ontology_terms('ogms')
         self.loader.final_report('ogms')
         self.assertTrue(isfile('/tmp/ogms_report.log'))
 
@@ -334,3 +339,45 @@ class TestOLSLoader(unittest.TestCase):
                                          rel.relation_type.name == 'is_a'])
             self.assertIn('GO:0030118', [rel.parent_term.accession for rel in m_term.parent_terms if
                                          rel.relation_type.name == 'part_of'])
+
+    def testLongTermDefinition(self):
+        self.loader.options['process_relations'] = True
+        self.loader.options['process_parents'] = True
+        with dal.session_scope() as session:
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/UBERON_0000948",
+                                        ontology_name='uberon', type=helpers.Term)
+            m_term = self.loader.load_term(o_term, 'uberon', session)
+            for syn in m_term.synonyms:
+                self.assertNotEqual(syn.name, '')
+
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/MONDO_0004933",
+                                        ontology_name='mondo', type=helpers.Term)
+            m_term = self.loader.load_term(o_term, 'mondo', session)
+            for syn in m_term.synonyms:
+                self.assertNotEqual(syn.name, '')
+
+    def testTermNoDefinition(self):
+        '''
+        Term does not declared a definition neither within annotation, label is therefore inserted
+        '''
+        self.loader.options['process_relations'] = False
+        self.loader.options['process_parents'] = False
+        with dal.session_scope() as session:
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/MONDO_0020003",
+                                        ontology_name='mondo', type=helpers.Term)
+            m_term = self.loader.load_term(o_term, 'mondo', session)
+            self.assertEqual(m_term.name, m_term.description.lower())
+
+    def testSubsetEco(self):
+
+        self.loader.options['process_relations'] = True
+        self.loader.options['process_parents'] = True
+        with dal.session_scope() as session:
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/ECO_0000305",
+                                        ontology_name='eco', type=helpers.Term)
+            m_term = self.loader.load_term(o_term, 'eco', session)
+            subsets = session.query(Subset).all()
+            subsets_name = [sub.name for sub in subsets]
+            term_subsets = m_term.subsets.split(',')
+            self.assertSetEqual(set(term_subsets), set(subsets_name))
+            [self.assertIsNotNone(definition) for definition in subsets]

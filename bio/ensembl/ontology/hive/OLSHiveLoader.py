@@ -19,7 +19,7 @@ from urllib import parse
 
 import eHive
 
-from bio.ensembl.ontology.loader import OlsLoader
+from bio.ensembl.ontology.loader.ols import OlsLoader
 
 
 class OLSHiveLoader(eHive.BaseRunnable):

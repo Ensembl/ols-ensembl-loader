@@ -2,14 +2,20 @@ language: python
 python:
   - "3.6"
 # command to install dependencies
+services:
+  - mysql
 install:
   - pip install -r requirements.txt
   - pip install nose
   - pip install coverage
   - pip install python-coveralls
+env:
+  - DB_TEST_URL=mysql+pymysql://root:@localhost:3306/ols_test_ontology?autocommit=true
 # command to run tests
 script:
   - nosetests tests.test_basic --verbose --with-coverage --cover-package=bio.ensembl
+before_script:
+  - mysql -e 'CREATE DATABASE ols_test_ontology;' -u root
 after_success:
   - coveralls
 notifications:
