@@ -313,7 +313,7 @@ class OlsLoader(object):
             for subset in unique_subsets:
                 subset_def = inflection.humanize(subset.label)
                 m_subset, created = get_one_or_create(Subset, session,
-                                                      name=subset.label,
+                                                      name=inflection.underscore(subset.label),
                                                       create_method_kwargs=dict(
                                                           definition=subset_def))
                 if created:
