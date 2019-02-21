@@ -162,3 +162,4 @@ venv.bak/
 .mypy_cache/
 *.db
 *.sqlite
+tmp/*
