@@ -20,10 +20,11 @@ from os import getenv
 from os.path import isfile
 
 import ebi.ols.api.helpers as helpers
-from bio.ensembl.ontology.loader.ols import OlsLoader
+from ebi.ols.api.client import OlsClient
+
 from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
-from ebi.ols.api.client import OlsClient
+from bio.ensembl.ontology.loader.ols import OlsLoader
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
@@ -378,10 +379,11 @@ class TestOLSLoader(unittest.TestCase):
             o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/ECO_0000305",
                                         ontology_name='eco', type=helpers.Term)
             m_term = self.loader.load_term(o_term, 'eco', session)
+            session.commit()
             subsets = session.query(Subset).all()
             subsets_name = [sub.name for sub in subsets]
             term_subsets = m_term.subsets.split(',')
-            self.assertSetEqual(set(term_subsets), set(subsets_name))
+            self.assertEqual(set(subsets_name), set(term_subsets))
             [self.assertIsNotNone(definition) for definition in subsets]
 
     def testChebi(self):
@@ -391,3 +393,12 @@ class TestOLSLoader(unittest.TestCase):
         session = dal.get_session()
         subsets = session.query(Subset).all()
         [self.assertNotEqual(subset.definition, subset.name) for subset in subsets]
+
+    def testLoadRelatedSynonyms(self):
+        self.loader.options['process_relations'] = False
+        self.loader.options['process_parents'] = False
+        with dal.session_scope() as session:
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/SO_0001712",
+                                        ontology_name='so', type=helpers.Term)
+            m_term = self.loader.load_term(o_term, 'mondo', session)
+            self.assertIn('H3K79Me3', [syn.name for syn in m_term.synonyms])

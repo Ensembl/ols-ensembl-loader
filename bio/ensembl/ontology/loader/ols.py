@@ -306,10 +306,12 @@ class OlsLoader(object):
     def load_term_subsets(self, term, session):
         subsets = []
         if term.subsets:
-            s_subsets = self.client.search(query=term.subsets, type='property')
+            s_subsets = self.client.search(query=term.subsets, filters={'type': 'property', 'exact': 'false'})
             seen = set()
             unique_subsets = [x for x in s_subsets if
                               x.short_form.lower() not in seen and not seen.add(x.short_form.lower())]
+            logger.debug("Loading unique subsets %s", unique_subsets)
+
             for subset in unique_subsets:
                 subset_def = inflection.humanize(subset.label)
                 m_subset, created = get_one_or_create(Subset, session,
@@ -318,6 +320,7 @@ class OlsLoader(object):
                                                           definition=subset_def))
                 if created:
                     # avoid call to API if already exists
+                    logger.info("Created new subset %s", m_subset.name)
                     try:
                         details = self.client.property(identifier=subset.iri)
                         if not details:
@@ -466,6 +469,19 @@ class OlsLoader(object):
                                                 )
             if created:
                 n_synonyms.append(synonym)
+        if hasattr(o_term.annotation, 'has_related_synonym'):
+            other_synonyms = o_term.annotation.has_related_synonym or []
+            for synonym in other_synonyms:
+                logger.info('Term synonym [%s - EXACT (No dbXref)]', synonym)
+                m_syno, created = get_one_or_create(Synonym,
+                                                    session,
+                                                    term=m_term,
+                                                    name=synonym,
+                                                    create_method_kwargs=dict(
+                                                        type='RELATED')
+                                                    )
+                if created:
+                    n_synonyms.append(synonym)
         if len(n_synonyms) == 0:
             logger.info('...No Synonym')
         logger.debug('...Done')
