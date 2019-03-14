@@ -306,7 +306,7 @@ class OlsLoader(object):
     def load_term_subsets(self, term, session):
         subsets = []
         if term.subsets:
-            s_subsets = self.client.search(query=term.subsets, filters={'type': 'property', 'exact': 'off'})
+            s_subsets = self.client.search(query=term.subsets, filters={'type': 'property', 'exact': 'false'})
             seen = set()
             unique_subsets = [x for x in s_subsets if
                               x.short_form.lower() not in seen and not seen.add(x.short_form.lower())]
