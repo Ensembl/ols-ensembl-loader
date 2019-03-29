@@ -314,7 +314,9 @@ class OlsLoader(object):
 
             for subset in unique_subsets:
                 m_subset, created = get_one_or_create(Subset, session,
-                                                      name=subset.label)
+                                                      name=inflection.underscore(subset.label),
+                                                      create_method_kwargs=dict(
+                                                          definition=subset_def))
                 if created:
                     # avoid call to API if already exists
                     logger.info("Created new subset %s", m_subset.name)
