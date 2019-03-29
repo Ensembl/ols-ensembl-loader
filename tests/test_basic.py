@@ -380,10 +380,11 @@ class TestOLSLoader(unittest.TestCase):
             o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/ECO_0000305",
                                         ontology_name='eco', type=helpers.Term)
             m_term = self.loader.load_term(o_term, 'eco', session)
+            session.commit()
             subsets = session.query(Subset).all()
             subsets_name = [sub.name for sub in subsets]
             term_subsets = m_term.subsets.split(',')
-            self.assertSetEqual(set(term_subsets), set(subsets_name))
+            self.assertEqual(set(subsets_name), set(term_subsets))
             [self.assertIsNotNone(definition) for definition in subsets]
 
     def testChebi(self):
@@ -425,3 +426,13 @@ class TestOLSLoader(unittest.TestCase):
             list_def2 = [subset.definition for subset in
                          session.query(Subset).filter(Subset.name.like('go%')).order_by(Subset.subset_id)]
             self.assertListEqual(list_def, list_def2)
+
+    def testLoadRelatedSynonyms(self):
+        self.loader.options['process_relations'] = False
+        self.loader.options['process_parents'] = False
+        with dal.session_scope() as session:
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/SO_0001712",
+                                        ontology_name='so', type=helpers.Term)
+            m_term = self.loader.load_term(o_term, 'mondo', session)
+            self.assertIn('H3K79Me3', [syn.name for syn in m_term.synonyms])
+
