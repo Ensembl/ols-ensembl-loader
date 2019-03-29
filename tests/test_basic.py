@@ -103,6 +103,8 @@ class TestOLSLoader(unittest.TestCase):
     def testLoadTimeMeta(self):
         ontology_name = 'bfo'
         self.loader.options['wipe'] = True
+        self.loader.options['db_version'] = '99'
+        self.loader.init_meta()
         with dal.session_scope() as session:
             m_ontology = self.loader.load_ontology(ontology_name)
             session.add(m_ontology)
@@ -110,6 +112,8 @@ class TestOLSLoader(unittest.TestCase):
         session = dal.get_session()
         meta_file_date = session.query(Meta).filter_by(meta_key=ontology_name + '_file_date').one()
         meta_start = session.query(Meta).filter_by(meta_key=ontology_name + '_load_date').one()
+        meta_schema = session.query(Meta).filter_by(meta_key='patch').one()
+        self.assertEqual('patch_98_99_a.sql|schema version', meta_schema.meta_value)
         self.assertTrue(
             datetime.datetime.strptime(meta_start.meta_value, ontology_name.upper() + "/%c") < datetime.datetime.now())
         logger.debug('meta load_all date: %s', meta_start)

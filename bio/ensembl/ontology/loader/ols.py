@@ -58,7 +58,7 @@ class OlsLoader(object):
     _default_options = dict(
         echo=False,
         wipe=False,
-        db_version=getenv('ENS_VERSION'),
+        db_version=getenv('ENS_VERSION', 99),
         max_retry=5,
         timeout=720,
         process_relations=True,
@@ -102,9 +102,11 @@ class OlsLoader(object):
 
     def init_meta(self):
         with dal.session_scope() as session:
+            prev_version = int(self.options.get('db_version')) - 1
             metas = {
                 'schema_version': self.options.get('db_version'),
-                'schema_type': 'ontology'
+                'schema_type': 'ontology',
+                'patch': 'patch_{}_{}_a.sql|schema version'.format(prev_version, self.options.get('db_version'))
             }
             for meta_key, meta_value in metas.items():
                 get_one_or_create(Meta,
