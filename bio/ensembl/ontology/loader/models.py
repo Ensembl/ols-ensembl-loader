@@ -52,7 +52,7 @@ def get_one_or_create(model, session=None, create_method='', create_method_kwarg
     q = 'undefined'
     try:
         obj = session.query(model).filter_by(**kwargs).one()
-        logger.debug('Exists %s', obj)
+        logger.info('Exists %s', obj)
         if 'helper' in create_kwargs:
             obj.update_from_helper(helper=create_kwargs.get('helper'))
         else:
@@ -110,9 +110,9 @@ class LoadAble(object):
         return '<{}({})>'.format(class_name, attributes)
 
     def update_from_helper(self, helper):
-        [self.__setattr__(key, getattr(helper, self._load_map.get(key, key), None)) for key in dir(self) if
-         getattr(helper, self._load_map.get(key, key), None) is not None
-         and getattr(helper, self._load_map.get(key, key)) != self.__getattribute__(key)]
+        [setattr(self, key, getattr(helper, self._load_map.get(key, key), None))
+         for key in dir(self) if getattr(helper, self._load_map.get(key, key), None) is not None
+            and getattr(helper, self._load_map.get(key, key)) != getattr(self, key)]
 
 
 class Meta(Base):
@@ -147,7 +147,7 @@ class Ontology(LoadAble, Base):
         return ['id', 'name', 'namespace', 'version', 'title', 'number_of_terms']
 
     id = Column('ontology_id', UnsignedInt, primary_key=True)
-    name = Column('name', String(64), nullable=False)
+    _name = Column('name', String(64), nullable=False)
     _namespace = Column('namespace', String(64), nullable=False)
     _version = Column('data_version', String(64), nullable=True, server_default=text('NULL'))
     title = Column(String(255), nullable=True, server_default=text('NULL'))
@@ -163,6 +163,10 @@ class Ontology(LoadAble, Base):
     @hybrid_property
     def version(self):
         return self._version
+
+    @hybrid_property
+    def name(self):
+        return self._name
 
     @namespace.setter
     def namespace(self, namespace):
@@ -181,6 +185,11 @@ class Ontology(LoadAble, Base):
         else:
             self._version = version
 
+    @name.setter
+    def name(self, name):
+        self._name = name.upper()
+
+    name = synonym('_name', descriptor=name)
     namespace = synonym('_namespace', descriptor=namespace)
     version = synonym('_version', descriptor=version)
 

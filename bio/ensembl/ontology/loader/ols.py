@@ -17,16 +17,16 @@ import logging
 from os import getenv
 from os.path import join
 
+import ebi.ols.api.exceptions
+import ebi.ols.api.helpers as helpers
 import inflection
 import itypes
 from coreapi.exceptions import CoreAPIException
+from ebi.ols.api.client import OlsClient
 from sqlalchemy.orm.exc import NoResultFound
 
-import ebi.ols.api.exceptions
-import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.loader.db import dal
 from bio.ensembl.ontology.loader.models import *
-from ebi.ols.api.client import OlsClient
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +67,8 @@ class OlsLoader(object):
         output_dir=getenv("HOME")
     )
 
-    allowed_ontologies = ['go', 'so', 'pato', 'hp', 'vt', 'efo', 'po', 'eo', 'to', 'chebi', 'pr', 'fypo', 'peco', 'bfo',
-                          'bto', 'cl', 'cmo', 'eco', 'mod', 'mp', 'ogms', 'uo', 'mondo', 'phi']
+    allowed_ontologies = ['GO', 'SO', 'PATO', 'HP', 'VT', 'EFO', 'PO', 'EO', 'TO', 'CHEBI', 'PR', 'FYPO', 'PECO', 'BFO',
+                          'BTO', 'CL', 'CMO', 'ECO', 'MOD', 'MP', 'OGMS', 'UO', 'MONDO', 'PHI']
 
     def __init__(self, url, **options):
         self.db_url = url
@@ -115,7 +115,7 @@ class OlsLoader(object):
                                   create_method_kwargs=dict(meta_value=meta_value))
         self.db_init = True
 
-    def load_ontology(self, ontology, namespace=''):
+    def load_ontology(self, ontology, session, namespace=''):
         """
         Load single ontology data from OLS API.
         Update
@@ -127,43 +127,41 @@ class OlsLoader(object):
             ontology = self.client.ontology(identifier=ontology)
         elif not isinstance(ontology, helpers.Ontology):
             raise RuntimeError('Wrong parameter')
-        ontology_name = ontology.ontology_id
+        ontology_name = ontology.ontology_id.upper()
         self.current_ontology = ontology_name
-        with dal.session_scope() as session:
+        namespace = namespace if namespace != '' else ontology.ontology_id
+        m_ontology, created = get_one_or_create(Ontology,
+                                                session,
+                                                name=ontology_name,
+                                                namespace=namespace,
+                                                create_method_kwargs={'helper': ontology})
+        if created:
             self.report('----------------------------------')
-            self.report('Ontology [%s] - %s:' % (ontology_name, ontology.config.title))
+            self.report('Ontology [%s][%s] - %s:' % (ontology_name, ontology.namespace, ontology.config.title))
             self.report('- Number of terms: %s' % ontology.number_of_terms)
             self.report('- Number of individuals: %s' % ontology.number_of_individuals)
             self.report('- Number of properties: %s' % ontology.number_of_properties)
-            m_ontology, created = get_one_or_create(Ontology,
-                                                    session,
-                                                    name=ontology.ontology_id,
-                                                    namespace=namespace or ontology_name,
-                                                    create_method_kwargs={'helper': ontology})
+        start = datetime.datetime.now()
+        logger.debug('Updating meta for ontology %s', ontology_name)
+        get_one_or_create(Meta,
+                          session,
+                          meta_key=ontology_name + '_load_date',
+                          create_method_kwargs=dict(
+                              meta_value=ontology_name + '/' + start.strftime('%c')))
+        try:
+            updated_at = datetime.datetime.strptime(ontology.updated, '%Y-%m-%dT%H:%M:%S.%f%z')
+        except ValueError:
+            # Default update to current date time
+            updated_at = datetime.datetime.now()
+        meta, created = get_one_or_create(Meta,
+                                          session,
+                                          meta_key=ontology_name + '_file_date',
+                                          create_method_kwargs=dict(
+                                              meta_value=ontology_name + '/' + updated_at.strftime('%c')))
 
-            start = datetime.datetime.now()
-            logger.debug('Updating meta for ontology %s', ontology_name)
-            get_one_or_create(Meta,
-                              session,
-                              meta_key=ontology_name + '_load_date',
-                              create_method_kwargs=dict(
-                                  meta_value=ontology_name.upper() + '/' + start.strftime('%c')))
-            try:
-                updated_at = datetime.datetime.strptime(ontology.updated, '%Y-%m-%dT%H:%M:%S.%f%z')
-            except ValueError:
-                # Default update to current date time
-                updated_at = datetime.datetime.now()
-            meta, created = get_one_or_create(Meta,
-                                              session,
-                                              meta_key=ontology.ontology_id + '_file_date',
-                                              create_method_kwargs=dict(
-                                                  meta_value=ontology.ontology_id.upper() + '/' + updated_at.strftime(
-                                                      '%c')))
-            self.report('- {}/{}'.format(meta.meta_key, meta.meta_value))
-            self.report('----------------------------------')
-            logger.info('Loaded [%s/%s] %s', m_ontology.name, m_ontology.namespace, m_ontology.title)
-            return m_ontology
-        return None
+        logger.info('Loaded [%s/%s] %s', m_ontology.name, m_ontology.namespace, m_ontology.title)
+        # session.merge(m_ontology)
+        return m_ontology
 
     @staticmethod
     def wipe_ontology(ontology_name):
@@ -179,7 +177,7 @@ class OlsLoader(object):
                 for meta in metas:
                     logger.debug('Deleted meta %s', meta)
                     session.delete(meta)
-                ontologies = session.query(Ontology).filter_by(name=ontology_name).all()
+                ontologies = session.query(Ontology).filter_by(name=ontology_name.upper()).all()
                 for ontology in ontologies:
                     logger.info('Deleting namespaced ontology %s - %s', ontology.name, ontology.namespace)
                     res = session.query(Synonym).filter(Synonym.term_id == Term.term_id,
@@ -218,14 +216,13 @@ class OlsLoader(object):
         return False
 
     def load_ontology_terms(self, ontology, start=None, end=None):
-        self.current_ontology = ontology
         nb_terms = 0
         nb_terms_ignored = 0
         o_ontology = self.client.ontology(identifier=ontology)
         if o_ontology:
-            self.current_ontology = o_ontology.ontology_id
+            self.current_ontology = o_ontology.ontology_id.upper()
             terms = o_ontology.terms()
-            logger.info('Loading %s terms for %s', len(terms), o_ontology.ontology_id)
+            logger.info('Loading %s terms for %s', len(terms), o_ontology.ontology_id.upper())
             if start is not None and end is not None:
                 logger.info('Loading terms slice [%s, %s]', start, end)
                 logger.info('-----------------------------------------')
@@ -236,16 +233,17 @@ class OlsLoader(object):
                 report_msg = ('- Loading all terms (%s)', len(terms))
             with dal.session_scope() as session:
                 for o_term in terms:
+                    logger.info('Term namespace %s', o_term.namespace)
                     if o_term.is_defining_ontology and has_accession(o_term):
                         m_ontology, created = get_one_or_create(Ontology,
                                                                 session,
-                                                                name=o_ontology.ontology_id,
-                                                                namespace=o_term.obo_name_space,
+                                                                name=self.current_ontology,
+                                                                namespace=o_term.namespace,
                                                                 create_method_kwargs=dict(
                                                                     version=o_ontology.version,
                                                                     title=o_ontology.title))
                         logger.debug('Loaded term (from OLS) %s', o_term)
-                        logger.debug('Adding/Retrieving namespaced ontology %s', o_term.obo_name_space)
+                        logger.debug('Adding/Retrieving namespaced ontology %s', o_term.namespace)
                         term = self.load_term(o_term, m_ontology, session)
                         if term:
                             session.add(term)
@@ -257,18 +255,32 @@ class OlsLoader(object):
                 self.report('- Expected %s terms (defined in ontology)', nb_terms)
                 self.report('- Ignored %s terms (not defined in ontology)', nb_terms_ignored)
                 return nb_terms, nb_terms_ignored
+        else:
+            logger.warn('Ontology not found %s', ontology)
         return None
 
     def load_term(self, o_term, ontology, session, process_relation=True):
+        """
+
+        :param o_term:
+        :param ontology:
+        :param session:
+        :param process_relation:
+        :return: Term
+        """
         if type(ontology) is str:
-            m_ontology = self.load_ontology(ontology)
+            logger.info('here ')
+            m_ontology = self.load_ontology(ontology, session, o_term.namespace)
+            session.merge(m_ontology)
         elif isinstance(ontology, Ontology):
+            logger.info('there ')
             m_ontology = ontology
         elif isinstance(ontology, helpers.Ontology):
+            logger.info('helper')
             m_ontology = Ontology(helper=ontology)
         else:
             raise RuntimeError('Wrong parameter')
-        session.add(m_ontology)
+        # session.merge(m_ontology)
 
         if has_accession(o_term):
             if not o_term.description:
@@ -370,7 +382,7 @@ class OlsLoader(object):
             return o_term_details, r_ontology
         else:
             if has_accession(o_term):
-                guessed_ontology = o_term.accession.split(':')[0].lower()
+                guessed_ontology = o_term.accession.split(':')[0]
                 logger.debug('Term ontology: %s', guessed_ontology)
                 if guessed_ontology not in self.allowed_ontologies:
                     logger.debug('Related term is defined in EXTERNAL ontology')
@@ -383,10 +395,11 @@ class OlsLoader(object):
                     if o_term_details:
                         o_onto_details = self.client.ontology(identifier=o_term_details.ontology_name)
                         if o_onto_details:
+                            namespace = o_term_details.namespace if o_term_details.namespace else o_term_details.ontology_name
                             r_ontology, created = get_one_or_create(Ontology,
                                                                     session,
-                                                                    name=o_onto_details.ontology_id,
-                                                                    namespace=o_term_details.obo_name_space or '',
+                                                                    name=o_onto_details.ontology_id.upper(),
+                                                                    namespace=namespace,
                                                                     create_method_kwargs=dict(
                                                                         version=o_onto_details.version,
                                                                         title=o_onto_details.title))
@@ -492,7 +505,7 @@ class OlsLoader(object):
     def final_report(self, ontology_name):
         """ Create a report from actual inserted data for ontology """
         session = dal.get_session()
-        ontologies = session.query(Ontology).filter_by(name=ontology_name).all()
+        ontologies = session.query(Ontology).filter_by(name=ontology_name.upper()).all()
         self.current_ontology = ontology_name
         for ontology in ontologies:
             synonyms = session.query(Synonym).filter(Synonym.term_id == Term.term_id,
