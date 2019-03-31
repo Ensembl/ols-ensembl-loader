@@ -17,9 +17,11 @@ import logging
 import unittest
 import warnings
 from os import getenv
+from os.path import isfile
 
 import ebi.ols.api.helpers as helpers
 from ebi.ols.api.client import OlsClient
+from ebi.ols.api.exceptions import NotFoundException
 
 from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
@@ -37,7 +39,8 @@ logging.getLogger('ebi.ols.api').setLevel(logging.WARNING)
 
 class TestOLSLoader(unittest.TestCase):
     _multiprocess_shared_ = False
-    db_url = getenv('DB_TEST_URL', 'sqlite://')
+    db_url = getenv('DB_TEST_URL',
+                    'mysql+pymysql://root:@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
 
     @classmethod
     def setUpClass(cls):
@@ -46,7 +49,7 @@ class TestOLSLoader(unittest.TestCase):
 
     def setUp(self):
         warnings.simplefilter("ignore", ResourceWarning)
-        self.loader = OlsLoader(self.db_url, echo=False, output_dir='/tmp')
+        self.loader = OlsLoader(self.db_url, echo=False, output_dir='.')
         self.client = OlsClient()
 
     def tearDown(self):
@@ -87,6 +90,8 @@ class TestOLSLoader(unittest.TestCase):
         self.assertEqual(5, session.query(Term).filter_by(ontology_id=ontology_id).count())
         ontologies = session.query(Ontology).filter_by(name=ontology_name)
         self.assertEqual(ontologies.count(), 2)
+        self.loader.final_report(ontology_name)
+        self.assertTrue(isfile(ontology_name + '_report.log'))
 
     def testLoadOntologyTerms(self):
         session = dal.get_session()
@@ -98,6 +103,10 @@ class TestOLSLoader(unittest.TestCase):
         inserted = s_terms.count()
         logger.info('Inserted terms %s', inserted)
         self.assertEqual(expected, inserted)
+        logger.info('Testing unknown ontology')
+        with self.assertRaises(NotFoundException):
+            expected, ignored = self.loader.load_ontology_terms('unknownontology')
+            self.assertEqual(0, expected)
 
     def testLoadTimeMeta(self):
         ontology_name = 'BFO'
@@ -201,6 +210,17 @@ class TestOLSLoader(unittest.TestCase):
             m_term = self.loader.load_term(o_term, m_ontology, session)
             session.commit()
             self.assertGreaterEqual(len(m_term.parent_terms), 4)
+
+            self.loader.options['process_relations'] = False
+            self.loader.options['process_parents'] = False
+            o_ontology = self.client.ontology('GO')
+            term = helpers.Term(ontology_name='GO', iri='http://purl.obolibrary.org/obo/GO_0000002')
+            o_term = self.client.detail(term)
+            print(o_term.description, o_term.label)
+            m_term = self.loader.load_term(o_term, o_ontology, session)
+            self.assertEqual(m_term.ontology.name, 'GO')
+            with self.assertRaises(RuntimeError):
+                self.loader.load_term(o_term, 33, session)
 
     def testOntologiesList(self):
         self.assertIsInstance(self.loader.allowed_ontologies, list)
@@ -430,7 +450,6 @@ class TestOLSLoader(unittest.TestCase):
             self.assertEqual('cellular_component', GO_0005575.ontology.namespace)
             self.assertEqual('molecular_function', GO_0003674.ontology.namespace)
 
-    """
     def testPartOfRelationship(self):
         with dal.session_scope() as session:
             o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/GO_0032042",
@@ -439,4 +458,3 @@ class TestOLSLoader(unittest.TestCase):
             self.assertIn('part_of', o_term.relations_types)
             self.assertIn('part_of', [relation.relation_type.name for relation in m_term.parent_terms])
             self.assertIn('occurs_in', [relation.relation_type.name for relation in m_term.parent_terms])
-    """

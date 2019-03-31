@@ -280,7 +280,10 @@ class OlsLoader(object):
         elif isinstance(ontology, Ontology):
             m_ontology = ontology
         elif isinstance(ontology, helpers.Ontology):
-            m_ontology = Ontology(helper=ontology)
+            m_ontology, created = get_one_or_create(Ontology,
+                                                    session,
+                                                    name=ontology.ontology_id.upper(),
+                                                    namespace=o_term.namespace)
         else:
             raise RuntimeError('Wrong parameter')
         session.merge(m_ontology)
