@@ -449,7 +449,7 @@ class TestOLSLoader(unittest.TestCase):
             self.assertEqual('biological_process', GO_0008150.ontology.namespace)
             self.assertEqual('cellular_component', GO_0005575.ontology.namespace)
             self.assertEqual('molecular_function', GO_0003674.ontology.namespace)
-
+"""
     def testPartOfRelationship(self):
         with dal.session_scope() as session:
             o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/GO_0032042",
@@ -458,3 +458,4 @@ class TestOLSLoader(unittest.TestCase):
             self.assertIn('part_of', o_term.relations_types)
             self.assertIn('part_of', [relation.relation_type.name for relation in m_term.parent_terms])
             self.assertIn('occurs_in', [relation.relation_type.name for relation in m_term.parent_terms])
+"""
