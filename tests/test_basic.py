@@ -436,5 +436,6 @@ class TestOLSLoader(unittest.TestCase):
                                         ontology_name='GO', type=helpers.Term)
             m_term = self.loader.load_term(o_term, 'GO', session)
             self.assertIn('part_of', o_term.relations_types)
+            session.commit()
             self.assertIn('part_of', [relation.relation_type.name for relation in m_term.parent_terms])
             self.assertIn('occurs_in', [relation.relation_type.name for relation in m_term.parent_terms])

@@ -79,6 +79,7 @@ class OlsLoader(object):
         self.db_init = False
         dal.db_init(self.db_url, **self.options)
         logger.info('Loaded with options %s ', self.options)
+        logger.info('DB url %s ', self.db_url)
         self.current_ontology = None
 
     def get_report_logger(self):
@@ -274,14 +275,11 @@ class OlsLoader(object):
         :return: Term
         """
         if type(ontology) is str:
-            logger.info('here ')
             m_ontology = self.load_ontology(ontology, session, o_term.namespace)
             # session.merge(m_ontology)
         elif isinstance(ontology, Ontology):
-            logger.info('there %s %s', ontology.name, ontology.namespace)
             m_ontology = ontology
         elif isinstance(ontology, helpers.Ontology):
-            logger.info('helper')
             m_ontology = Ontology(helper=ontology)
         else:
             raise RuntimeError('Wrong parameter')
