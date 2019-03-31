@@ -17,7 +17,6 @@ import logging
 import unittest
 import warnings
 from os import getenv
-from os.path import isfile
 
 import ebi.ols.api.helpers as helpers
 from ebi.ols.api.client import OlsClient
@@ -323,13 +322,6 @@ class TestOLSLoader(unittest.TestCase):
         ontologies = session.query(Ontology).filter_by(name='OBI').count()
         # assert that OBI has not been inserted
         self.assertEqual(0, ontologies)
-
-    def testReport(self):
-        o_ontology = self.client.ontology('OGMS')
-        ranges = range(o_ontology.number_of_terms)
-        self.loader.load_ontology_terms('OGMS')
-        self.loader.final_report('OGMS')
-        self.assertTrue(isfile('/tmp/ogms_report.log'))
 
     def testGoTerm(self):
         self.loader.options['process_relations'] = True
