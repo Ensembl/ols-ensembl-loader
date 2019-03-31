@@ -34,13 +34,10 @@ class OLSOntologyLoader(OLSHiveLoader):
         assert self.param_required('ontology_name').upper() in self.ols_loader.allowed_ontologies
 
         with dal.session_scope() as session:
-            # client = OLS
-            # TODO change it to only load info from ols-client (should avoid empty namespaces in ontologies)
             m_ontology = self.ols_loader.load_ontology(self.param_required('ontology_name'), session=session)
             session.add(m_ontology)
             self.dataflow({'ontology_name': self.param_required('ontology_name'),
-                           'nb_terms': m_ontology.number_of_terms
-                           })
+                           'nb_terms': m_ontology.number_of_terms})
 
     def write_output(self):
         logger.info('Ontology %s done...', self.param_required('ontology_name'))

@@ -403,11 +403,7 @@ class TestOLSLoader(unittest.TestCase):
     def testLoadRelatedSynonyms(self):
         self.loader.options['process_relations'] = False
         self.loader.options['process_parents'] = False
-        with dal.session_scope() as session:
-            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/SO_0001712",
-                                        ontology_name='SO', type=helpers.Term)
-            m_term = self.loader.load_term(o_term, 'MONDO', session)
-            self.assertIn('H3K79Me3', [syn.name for syn in m_term.synonyms])
+
 
     def testUpperCase(self):
         ontology_name = 'ogms'
@@ -444,3 +440,13 @@ class TestOLSLoader(unittest.TestCase):
             self.assertEqual('molecular_function', GO_0003674.ontology.namespace)
 
 
+    def testPartOfRelationship(self):
+        with dal.session_scope() as session:
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/GO_0032042",
+                                        ontology_name='GO', type=helpers.Term)
+            m_term = self.loader.load_term(o_term, 'GO', session)
+            self.assertIn('part_of', o_term.relations_types)
+            relations = m_term.child_terms
+            print('children ', relations)
+            relations = m_term.parent_terms
+            print('children ', relations)

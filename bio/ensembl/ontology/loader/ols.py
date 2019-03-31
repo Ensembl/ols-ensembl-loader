@@ -119,6 +119,7 @@ class OlsLoader(object):
         """
         Load single ontology data from OLS API.
         Update
+        :param session:
         :param ontology:
         :param namespace:
         :return: an Ontology model object.
@@ -127,6 +128,7 @@ class OlsLoader(object):
             ontology = self.client.ontology(identifier=ontology)
         elif not isinstance(ontology, helpers.Ontology):
             raise RuntimeError('Wrong parameter')
+
         ontology_name = ontology.ontology_id.upper()
         self.current_ontology = ontology_name
         namespace = namespace if namespace != '' else ontology.ontology_id
@@ -160,7 +162,6 @@ class OlsLoader(object):
                               meta_value=ontology_name + '/' + updated_at.strftime('%c')))
 
         logger.info('Loaded [%s/%s] %s', m_ontology.name, m_ontology.namespace, m_ontology.title)
-        # session.merge(m_ontology)
         return m_ontology
 
     @staticmethod
@@ -262,7 +263,7 @@ class OlsLoader(object):
                 return nb_terms, nb_terms_ignored
         else:
             logger.warn('Ontology not found %s', ontology)
-        return None
+            return 0, 0
 
     def load_term(self, o_term, ontology, session, process_relation=True):
         """
@@ -420,7 +421,7 @@ class OlsLoader(object):
                 o_term_details, r_ontology = self.rel_dest_ontology(m_term, o_term, session)
                 if o_term_details and has_accession(o_term_details):
                     m_related = self.load_term(o_term=o_term_details, ontology=o_term_details.ontology_name,
-                                               session=session, process_relation=False)
+                                               session=session)
                 else:
                     logger.warning('Term %s (%s) relation %s with %s not found in %s ',
                                    m_term.accession,
