@@ -26,13 +26,14 @@ from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
 from bio.ensembl.ontology.loader.ols import OlsLoader
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
                     datefmt='%m-%d %H:%M:%S')
 
 logger = logging.getLogger(__name__)
 
 logging.getLogger('urllib3.connectionpool').setLevel(logging.FATAL)
+logging.getLogger('ebi.ols.api').setLevel(logging.WARNING)
 
 
 class TestOLSLoader(unittest.TestCase):
@@ -428,13 +429,18 @@ class TestOLSLoader(unittest.TestCase):
             'GO_0008150',
         ]
         self.loader.options['process_relations'] = False
-        self.loader.options['process_parents'] = False
+        self.loader.options['process_parents'] = True
         with dal.session_scope() as session:
-            for acc in go_term:
-                o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/' + acc, unique=True, silent=False)
-                term = self.loader.load_term(o_term, 'go', session)
-        with dal.session_scope() as session:
+            terms = self.loader.load_ontology_terms('GO', 0, 20)
             ontologies = session.query(Ontology).filter_by(name='GO')
             namespaces = [onto.namespace for onto in ontologies]
-            self.assertSetEqual(set(['biological_process', 'cellular_component', 'molecular_function']),
+            self.assertSetEqual(set(['go', 'biological_process', 'cellular_component', 'molecular_function']),
                                 set(namespaces))
+            GO_0005575 = session.query(Term).filter_by(accession='GO:0005575').one()
+            GO_0003674 = session.query(Term).filter_by(accession='GO:0003674').one()
+            GO_0008150 = session.query(Term).filter_by(accession='GO:0008150').one()
+            self.assertEqual('biological_process', GO_0008150.ontology.namespace)
+            self.assertEqual('cellular_component', GO_0005575.ontology.namespace)
+            self.assertEqual('molecular_function', GO_0003674.ontology.namespace)
+
+

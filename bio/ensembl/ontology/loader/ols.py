@@ -153,11 +153,11 @@ class OlsLoader(object):
         except ValueError:
             # Default update to current date time
             updated_at = datetime.datetime.now()
-        meta, created = get_one_or_create(Meta,
-                                          session,
-                                          meta_key=ontology_name + '_file_date',
-                                          create_method_kwargs=dict(
-                                              meta_value=ontology_name + '/' + updated_at.strftime('%c')))
+        get_one_or_create(Meta,
+                          session,
+                          meta_key=ontology_name + '_file_date',
+                          create_method_kwargs=dict(
+                              meta_value=ontology_name + '/' + updated_at.strftime('%c')))
 
         logger.info('Loaded [%s/%s] %s', m_ontology.name, m_ontology.namespace, m_ontology.title)
         # session.merge(m_ontology)
@@ -221,15 +221,15 @@ class OlsLoader(object):
         o_ontology = self.client.ontology(identifier=ontology)
         if o_ontology:
             self.current_ontology = o_ontology.ontology_id.upper()
-            terms = o_ontology.terms()
-            logger.info('Loading %s terms for %s', len(terms), o_ontology.ontology_id.upper())
             if start is not None and end is not None:
                 logger.info('Loading terms slice [%s, %s]', start, end)
                 logger.info('-----------------------------------------')
-                terms = terms[start:end]
+                terms = o_ontology.terms()[start:end]
                 logger.info('Slice len %s', len(terms))
                 report_msg = ('- Loading %s terms slice [%s:%s]', ontology, start, end)
             else:
+                terms = o_ontology.terms()
+                logger.info('Loading %s terms for %s', len(terms), o_ontology.ontology_id.upper())
                 report_msg = ('- Loading all terms (%s)', len(terms))
             with dal.session_scope() as session:
                 for o_term in terms:
@@ -244,6 +244,11 @@ class OlsLoader(object):
                                                                     title=o_ontology.title))
                         logger.debug('Loaded term (from OLS) %s', o_term)
                         logger.debug('Adding/Retrieving namespaced ontology %s', o_term.namespace)
+                        logger.debug('Ontology namespace %s %s', m_ontology.name, m_ontology.namespace)
+                        if m_ontology.namespace != o_term.namespace:
+                            logger.warning('discrepancy term/ontology namespace')
+                            logger.warning('term:', o_term)
+                            logger.warning('ontology:', o_ontology)
                         term = self.load_term(o_term, m_ontology, session)
                         if term:
                             session.add(term)
@@ -261,7 +266,6 @@ class OlsLoader(object):
 
     def load_term(self, o_term, ontology, session, process_relation=True):
         """
-
         :param o_term:
         :param ontology:
         :param session:
@@ -271,16 +275,16 @@ class OlsLoader(object):
         if type(ontology) is str:
             logger.info('here ')
             m_ontology = self.load_ontology(ontology, session, o_term.namespace)
-            session.merge(m_ontology)
+            # session.merge(m_ontology)
         elif isinstance(ontology, Ontology):
-            logger.info('there ')
+            logger.info('there %s %s', ontology.name, ontology.namespace)
             m_ontology = ontology
         elif isinstance(ontology, helpers.Ontology):
             logger.info('helper')
             m_ontology = Ontology(helper=ontology)
         else:
             raise RuntimeError('Wrong parameter')
-        # session.merge(m_ontology)
+        session.merge(m_ontology)
 
         if has_accession(o_term):
             if not o_term.description:
@@ -291,13 +295,13 @@ class OlsLoader(object):
                                                 create_method_kwargs=dict(helper=o_term,
                                                                           ontology=m_ontology))
 
-            logger.info('Loaded Term [%s][%s] ...', m_term.accession, o_term.iri)
-            logger.debug('%s => %s', m_term.accession, m_term)
+            logger.info('Loaded Term [%s][%s][%s]', m_term.accession, o_term.namespace, m_term.iri)
             if created:
                 self.load_term_subsets(m_term, session)
                 self.load_alt_ids(m_term, o_term, session)
                 self.load_term_synonyms(m_term, o_term, session)
-                if m_term.ontology.name in self.allowed_ontologies and self.options.get('process_relations', True) \
+                if o_term.ontology_name.upper() in self.allowed_ontologies \
+                        and self.options.get('process_relations', True) \
                         and process_relation:
                     self.load_term_relations(m_term, o_term, session)
                 if not m_term.is_root and self.options.get('process_parents', True):
@@ -409,21 +413,28 @@ class OlsLoader(object):
     def load_term_relation(self, m_term, o_term, relation_type, session):
 
         if has_accession(o_term):
-            o_term_details, r_ontology = self.rel_dest_ontology(m_term, o_term, session)
-            if o_term_details and has_accession(o_term_details):
-                m_related = self.load_term(o_term=o_term_details, ontology=r_ontology, session=session,
-                                           process_relation=False)
-                logger.info('Adding relation %s %s %s', m_term.accession, relation_type.name,
-                            m_related.accession)
+            try:
+                m_related = session.query(Term).filter_by(accession=o_term.accession).one()
+                logger.info('Exists %s', m_related)
+            except NoResultFound:
+                o_term_details, r_ontology = self.rel_dest_ontology(m_term, o_term, session)
+                if o_term_details and has_accession(o_term_details):
+                    m_related = self.load_term(o_term=o_term_details, ontology=o_term_details.ontology_name,
+                                               session=session, process_relation=False)
+                else:
+                    logger.warning('Term %s (%s) relation %s with %s not found in %s ',
+                                   m_term.accession,
+                                   m_term.ontology.name,
+                                   relation_type.name,
+                                   o_term.iri, o_term.ontology_name)
+                    return None, None
+            if m_related:
+                logger.info('Adding relation %s %s %s', m_term.accession, relation_type.name, m_related.accession)
                 m_relation = m_term.add_parent_relation(m_related, relation_type, session)
                 logger.debug('Loaded relation %s %s %s', m_term.accession, relation_type.name, m_related.accession)
                 return m_related, m_relation
             else:
-                logger.warning('Term %s (%s) relation %s with %s not found in %s ',
-                               m_term.accession, m_term.ontology.name,
-                               relation_type.name,
-                               o_term.iri, o_term.ontology_name)
-        return None, None
+                return None, None
 
     def load_term_ancestors(self, m_term, o_term, session):
         # delete old ancestors

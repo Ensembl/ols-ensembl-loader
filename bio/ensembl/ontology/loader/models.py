@@ -53,20 +53,20 @@ def get_one_or_create(model, session=None, create_method='', create_method_kwarg
     try:
         obj = session.query(model).filter_by(**kwargs).one()
         logger.info('Exists %s', obj)
-        if 'helper' in create_kwargs:
-            obj.update_from_helper(helper=create_kwargs.get('helper'))
-        else:
-            [setattr(obj, attribute, create_kwargs.get(attribute)) for attribute in create_kwargs if
-             attribute is not None and create_kwargs.get(attribute) != getattr(obj, attribute)]
+        #if 'helper' in create_kwargs:
+        #    obj.update_from_helper(helper=create_kwargs.get('helper'))
+        #else:
+        #    [setattr(obj, attribute, create_kwargs.get(attribute)) for attribute in create_kwargs if
+        #     attribute is not None and create_kwargs.get(attribute) != getattr(obj, attribute)]
         logger.debug('Updated %s', obj)
         return obj, False
     except NoResultFound:
         try:
             create_kwargs.update(kwargs)
+            logger.debug('Create %s', create_kwargs)
             new_obj = getattr(model, create_method, model)(**create_kwargs)
             session.add(new_obj)
             session.commit()
-            logger.debug('Create %s', new_obj)
             return new_obj, True
         except IntegrityError as e:
             logger.error('Integrity error upon flush: %s', str(e))
