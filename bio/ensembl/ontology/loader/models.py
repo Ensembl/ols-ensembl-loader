@@ -52,21 +52,15 @@ def get_one_or_create(model, session=None, create_method='', create_method_kwarg
     q = 'undefined'
     try:
         obj = session.query(model).filter_by(**kwargs).one()
-        logger.debug('Exists %s', obj)
-        if 'helper' in create_kwargs:
-            obj.update_from_helper(helper=create_kwargs.get('helper'))
-        else:
-            [setattr(obj, attribute, create_kwargs.get(attribute)) for attribute in create_kwargs if
-             attribute is not None and create_kwargs.get(attribute) != getattr(obj, attribute)]
-        logger.debug('Updated %s', obj)
+        logger.info('Exists %s', obj)
         return obj, False
     except NoResultFound:
         try:
             create_kwargs.update(kwargs)
+            logger.debug('Create %s', create_kwargs)
             new_obj = getattr(model, create_method, model)(**create_kwargs)
             session.add(new_obj)
             session.commit()
-            logger.debug('Create %s', new_obj)
             return new_obj, True
         except IntegrityError as e:
             logger.error('Integrity error upon flush: %s', str(e))
@@ -110,9 +104,9 @@ class LoadAble(object):
         return '<{}({})>'.format(class_name, attributes)
 
     def update_from_helper(self, helper):
-        [self.__setattr__(key, getattr(helper, self._load_map.get(key, key), None)) for key in dir(self) if
-         getattr(helper, self._load_map.get(key, key), None) is not None
-         and getattr(helper, self._load_map.get(key, key)) != self.__getattribute__(key)]
+        [setattr(self, key, getattr(helper, self._load_map.get(key, key), None))
+         for key in dir(self) if getattr(helper, self._load_map.get(key, key), None) is not None
+            and getattr(helper, self._load_map.get(key, key)) != getattr(self, key)]
 
 
 class Meta(Base):
@@ -147,7 +141,7 @@ class Ontology(LoadAble, Base):
         return ['id', 'name', 'namespace', 'version', 'title', 'number_of_terms']
 
     id = Column('ontology_id', UnsignedInt, primary_key=True)
-    name = Column('name', String(64), nullable=False)
+    _name = Column('name', String(64), nullable=False)
     _namespace = Column('namespace', String(64), nullable=False)
     _version = Column('data_version', String(64), nullable=True, server_default=text('NULL'))
     title = Column(String(255), nullable=True, server_default=text('NULL'))
@@ -163,6 +157,10 @@ class Ontology(LoadAble, Base):
     @hybrid_property
     def version(self):
         return self._version
+
+    @hybrid_property
+    def name(self):
+        return self._name
 
     @namespace.setter
     def namespace(self, namespace):
@@ -181,6 +179,11 @@ class Ontology(LoadAble, Base):
         else:
             self._version = version
 
+    @name.setter
+    def name(self, name):
+        self._name = name.upper()
+
+    name = synonym('_name', descriptor=name)
     namespace = synonym('_namespace', descriptor=namespace)
     version = synonym('_version', descriptor=version)
 
@@ -202,7 +205,7 @@ class Subset(LoadAble, Base):
 
     subset_id = Column(UnsignedInt, primary_key=True)
     name = Column(String(64, convert_unicode=True), nullable=False, unique=True)
-    definition = Column(Unicode(511), nullable=False, server_default=text("''"))
+    definition = Column(BigStringUtf8, nullable=False, server_default=text("''"))
 
 
 class Term(LoadAble, Base):
