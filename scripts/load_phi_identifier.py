@@ -81,6 +81,7 @@ if __name__ == "__main__":
             accession = 'PHI:{}'.format(i)
             term = Term(accession=accession, name='{}' % i)
             if i == 0:
+                term.name = 'phibase identifier'
                 term.is_root = 1
 
             logger.debug('Adding Term %s', accession)
