@@ -79,7 +79,10 @@ if __name__ == "__main__":
                                                    name='is_a')
         for i in range(10000):
             accession = 'PHI:{}'.format(i)
-            term = Term(accession=accession, name='PHI-Base identifier %s' % accession)
+            term = Term(accession=accession, name='{}' % i)
+            if i == 0:
+                term.is_root = 1
+
             logger.debug('Adding Term %s', accession)
             session.add(term)
             m_ontology.terms.append(term)
