@@ -27,7 +27,7 @@ class OLSImportReport(OLSHiveLoader):
         # False => erreur marque le job en failed, i.e pas de retry
         self.input_job.transient_error = False
         logger.info('Creating loading report for %s', self.param_required('ontology_name'))
-        assert self.param_required('ontology_name') in self.ols_loader.allowed_ontologies
+        assert self.param_required('ontology_name').upper() in self.ols_loader.allowed_ontologies
 
         self.ols_loader.final_report(self.param_required('ontology_name'))
         self.dataflow({'ontology_name': self.param_required('ontology_name'),
