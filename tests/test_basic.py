@@ -200,6 +200,10 @@ class TestOLSLoader(unittest.TestCase):
         m_term = self.loader.load_term(o_term, m_ontology, session)
         dal.get_session().commit()
         self.assertTrue(isinstance(m_term.description, str))
+        if 'λ' in o_term.description:
+            self.assertIn('λ', m_term.description)
+        else:
+            self.skipTest("Character not present in retrieved term from OLS")
 
     def testSingleTerm(self):
         self.loader.options['process_relations'] = True
