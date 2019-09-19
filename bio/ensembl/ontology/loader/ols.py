@@ -225,8 +225,12 @@ class OlsLoader(object):
             self.current_ontology = o_ontology.ontology_id.upper()
             if start is not None and end is not None:
                 logger.info('Loading terms slice [%s, %s]', start, end)
+                # TODO move this slice fix into ols-client when dealing with discrepencies between number of terms
+                # between ontology / terms api calls
+                max_terms = len(o_ontology.terms()) - 1
+                logger.info('Which is slice [%s, %s]', start, min(end, max_terms))
                 logger.info('-----------------------------------------')
-                terms = o_ontology.terms()[start:end]
+                terms = o_ontology.terms()[start:min(end, max_terms)]
                 logger.info('Slice len %s', len(terms))
                 report_msg = ('- Loading %s terms slice [%s:%s]', ontology, start, end)
             else:
