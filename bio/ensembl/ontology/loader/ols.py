@@ -228,9 +228,14 @@ class OlsLoader(object):
                 # TODO move this slice fix into ols-client when dealing with discrepencies between number of terms
                 # between ontology / terms api calls
                 max_terms = len(o_ontology.terms()) - 1
-                logger.info('Which is slice [%s, %s]', start, min(end, max_terms))
+                min_end = min(end, max_terms)
+                logger.info('Which is slice [%s, %s]', start, min_end)
                 logger.info('-----------------------------------------')
-                terms = o_ontology.terms()[start:min(end, max_terms)]
+                if min_end < start:
+                    logger.warning("Wrong slice order.min:%s max:%s ", start, min_end)
+                    # skip this chunk
+                    return
+                terms = o_ontology.terms()[start:min_end]
                 logger.info('Slice len %s', len(terms))
                 report_msg = ('- Loading %s terms slice [%s:%s]', ontology, start, end)
             else:
