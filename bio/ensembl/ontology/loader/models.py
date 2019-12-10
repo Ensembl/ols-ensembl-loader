@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 """
 SQLAlchemy database models for OLS ontologies loading
- 
+
 """
 __all__ = ['Base', 'Ontology', 'Meta', 'Term', 'Subset', 'RelationType', 'Closure', 'Relation', 'AltId', 'Synonym',
            'SynonymTypeEnum', 'get_one_or_create']
@@ -222,12 +222,21 @@ class Term(LoadAble, Base):
         return ['term_id', 'name', 'ontology_id', 'subsets', 'accession', 'description', 'is_root', 'is_obsolete',
                 'iri', 'ontology']
 
+    _description = Column('definition', TextUtf8)
+
+    @hybrid_property
+    def description(self):
+        return self._description
+
+    @description.setter
+    def description(self, val):
+        self._description = ' '.join(val.splitlines())
+
     term_id = Column(UnsignedInt, primary_key=True)
     ontology_id = Column(ForeignKey(Ontology.id), nullable=False)
     subsets = Column(Text)
     accession = Column(String(64), nullable=False, unique=True)
     name = Column(BigStringUtf8, nullable=False)
-    description = Column('definition', TextUtf8)
 
     is_root = Column(Integer, nullable=False, default=0, server_default=text("0"))
     is_obsolete = Column(Integer, nullable=False, default=0, server_default=text("0"))

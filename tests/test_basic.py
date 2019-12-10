@@ -396,8 +396,22 @@ class TestOLSLoader(unittest.TestCase):
             m_term = self.loader.load_term(o_term, 'MONDO', session)
             self.assertEqual(m_term.name, m_term.description.lower())
 
-    def testSubsetEco(self):
+    def testTermInvalidDefinition(self):
+        '''
+        Term has invalid characters in the definition (e.g. "\\n")
+        '''
+        self.loader.options['process_relations'] = False
+        self.loader.options['process_parents'] = False
+        with dal.session_scope() as session:
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/GO_0090481",
+                                        ontology_name='GO', type=helpers.Term)
+            if '\n' not in o_term.description:
+                self.skipTest("Term Description does not contain invalid characters.")
+            else:
+                m_term = self.loader.load_term(o_term, 'GO', session)
+                self.assertNotIn('\n', m_term.description)
 
+    def testSubsetEco(self):
         self.loader.options['process_relations'] = True
         self.loader.options['process_parents'] = True
         with dal.session_scope() as session:
