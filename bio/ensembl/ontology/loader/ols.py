@@ -234,7 +234,7 @@ class OlsLoader(object):
                 if min_end < start:
                     logger.warning("Wrong slice order.min:%s max:%s ", start, min_end)
                     # skip this chunk
-                    return
+                    return None, None
                 terms = o_ontology.terms()[start:min_end]
                 logger.info('Slice len %s', len(terms))
                 report_msg = ('- Loading %s terms slice [%s:%s]', ontology, start, end)
