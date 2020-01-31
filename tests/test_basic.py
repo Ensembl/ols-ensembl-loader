@@ -16,8 +16,8 @@ import datetime
 import logging
 import unittest
 import warnings
-from os import getenv
-from os.path import isfile
+import os
+import configparser
 
 import sqlalchemy
 
@@ -38,9 +38,30 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.FATAL)
 logging.getLogger('ebi.ols.api').setLevel(logging.WARNING)
 
 
+def read_env():
+    """
+    Reads a INI file named .env in the same directory manage.py is invoked and
+    loads it as environment variables.
+    Note: At least one section must be present. If the environment variable
+    TEST_ENV is not set then the [DEFAULT] section will be loaded.
+    More info: https://docs.python.org/3/library/configparser.html
+    """
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(os.path.join(os.path.dirname(__file__), '.env'))
+    section = os.environ.get("TEST_ENV", "DEFAULT")
+
+    for var, value in config[section].items():
+        os.environ.setdefault(var, value)
+
+
+read_env()
+
+
 class TestOLSLoader(unittest.TestCase):
     _multiprocess_shared_ = False
-    db_url = getenv('DB_TEST_URL', 'mysql+pymysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
+    db_url = os.getenv('DB_TEST_URL', 'mysql+pymysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
+    ols_api_url = os.getenv('OLS_API_URL', 'https://www.ebi.ac.uk/ols/api')
 
     @classmethod
     def setUpClass(cls):
@@ -53,7 +74,7 @@ class TestOLSLoader(unittest.TestCase):
     def setUp(self):
         warnings.simplefilter("ignore", ResourceWarning)
         self.loader = OlsLoader(self.db_url, echo=False, output_dir='.')
-        self.client = OlsClient()
+        self.client = OlsClient(base_site=self.ols_api_url)
 
     def tearDown(self):
         dal.wipe_schema(self.db_url)
@@ -94,7 +115,7 @@ class TestOLSLoader(unittest.TestCase):
         ontologies = session.query(Ontology).filter_by(name=ontology_name)
         self.assertEqual(ontologies.count(), 2)
         self.loader.final_report(ontology_name)
-        self.assertTrue(isfile(ontology_name + '_report.log'))
+        self.assertTrue(os.path.isfile(ontology_name + '_report.log'))
 
     def testLoadOntologyTerms(self):
         session = dal.get_session()
