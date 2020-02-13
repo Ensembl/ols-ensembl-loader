@@ -471,6 +471,33 @@ class TestOLSLoaderRemote(unittest.TestCase):
         self.loader.final_report(ontology_name)
         self.assertTrue(os.path.isfile(ontology_name + '_report.log'))
 
+    def testRelatedNonExpected(self):
+        self.loader.options['process_relations'] = True
+        self.loader.options['process_parents'] = True
+        with dal.session_scope() as session:
+            ontology_name = 'ECO'
+            expected, _ignored = self.loader.load_ontology_terms(ontology_name, start=0, end=50)
+            logger.info('Expected terms %s', expected)
+            s_terms = session.query(Term).filter(Ontology.name == ontology_name)
+            inserted = s_terms.count()
+            logger.info('Inserted terms %s', inserted)
+            self.assertGreaterEqual(inserted, expected)
+
+    def testUpperCase(self):
+        ontology_name = 'OGMS'
+        self.loader.options['process_relations'] = False
+        with dal.session_scope() as session:
+            m_ontology = self.loader.load_ontology(ontology_name, session)
+            session.add(m_ontology)
+            self.assertEqual(m_ontology.name, 'OGMS')
+            onto_id = m_ontology.id
+            logger.info("Ontololgy name in DB %s", m_ontology.name)
+            self.loader.load_ontology_terms('aero', 0, 50)
+            terms = session.query(Term).all()
+            for term in terms:
+                if term.ontology.name == 'OGMS':
+                    self.assertTrue(term.ontology_id == onto_id)
+
 
 class TestOLSLoaderBasic(unittest.TestCase):
     _multiprocess_shared_ = False
@@ -499,34 +526,7 @@ class TestOLSLoaderBasic(unittest.TestCase):
         metas = session.query(Meta).all()
         self.assertGreaterEqual(len(metas), 2)
 
-    def testRelatedNonExpected(self):
-        self.loader.options['process_relations'] = True
-        self.loader.options['process_parents'] = True
-        with dal.session_scope() as session:
-            ontology_name = 'AERO'
-            expected, _ignored = self.loader.load_ontology_terms(ontology_name, start=0, end=50)
-            logger.info('Expected terms %s', expected)
-            s_terms = session.query(Term).filter(Ontology.name == ontology_name)
-            inserted = s_terms.count()
-            logger.info('Inserted terms %s', inserted)
-            self.assertGreaterEqual(inserted, expected)
-
     def testLoadRelatedSynonyms(self):
         self.loader.options['process_relations'] = False
         self.loader.options['process_parents'] = False
-
-    def testUpperCase(self):
-        ontology_name = 'aero'
-        self.loader.options['process_relations'] = False
-        with dal.session_scope() as session:
-            m_ontology = self.loader.load_ontology(ontology_name, session)
-            session.add(m_ontology)
-            self.assertEqual(m_ontology.name, 'AERO')
-            onto_id = m_ontology.id
-            logger.info("Ontololgy name in DB %s", m_ontology.name)
-            self.loader.load_ontology_terms('aero', 0, 50)
-            terms = session.query(Term).all()
-            for term in terms:
-                if term.ontology.name == 'AERO':
-                    self.assertTrue(term.ontology_id == onto_id)
 
