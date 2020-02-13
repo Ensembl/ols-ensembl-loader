@@ -56,7 +56,7 @@ if __name__ == "__main__":
     arguments = parser.parse_args(sys.argv[1:])
     logger.setLevel(logging.INFO)
     # logging.ERROR if arguments.verbose is None else logging.INFO if arguments.verbose is False else logging.DEBUG)
-    print('Script arguments: ', arguments)
+    logger.info('Script arguments: {}'.format(arguments))
     args = vars(parser.parse_args())
     db_name = 'ensembl_ontology_{}'.format(arguments.release)
     options = {'drop': not arguments.keep, 'echo': arguments.verbose, 'db_version': arguments.release}
@@ -69,14 +69,14 @@ if __name__ == "__main__":
         slices = arguments.slice.split('-')
     else:
         slices = None
-    print('Db Url set to:', db_url)
-    print('Loader arguments:', db_url, options)
-    print('Slices: ', slices)
+    logger.info('Db Url set to: {}'.format(db_url))
+    logger.info('Loader arguments: {} {}'.format(db_url, options))
+    logger.info('Slices: {}'.format(slices))
 
     response = input("Confirm to proceed (y/N)? ")
 
     if response.upper() != 'Y':
-        logging.info('Process cancelled')
+        logger.info('Process cancelled')
         exit(0)
 
     loader = OlsLoader(db_url, **options)
