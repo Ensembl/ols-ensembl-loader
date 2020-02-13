@@ -1,6 +1,7 @@
-requests==2.20.0
+git+git://github.com/radome/ols-client@EP-4829_docker_test#egg=ebi-ols-client
+requests==2.22.0
 SQLAlchemy==1.2.11
-ebi-ols-client==1.0.8
+# ebi-ols-client==1.0.8
 mysqlclient==1.3.13
 dateutils==0.6.6
 coreapi==2.3.3
