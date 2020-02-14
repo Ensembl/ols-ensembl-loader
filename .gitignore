@@ -163,3 +163,6 @@ venv.bak/
 *.db
 *.sqlite
 tmp/*
+
+# dev test environment
+tests/.env

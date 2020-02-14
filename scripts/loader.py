@@ -51,11 +51,12 @@ if __name__ == "__main__":
     parser.add_argument('-k', '--keep', required=False, default=False, help='Keep database', action='store_true')
     parser.add_argument('-u', '--host_url', type=str, required=True,
                         help='Db Host Url format engine:///user:pass@host:port')
+    parser.add_argument('-s', '--slice', help='Only load a slice of data format START-STOP', required=False)
 
     arguments = parser.parse_args(sys.argv[1:])
     logger.setLevel(logging.INFO)
     # logging.ERROR if arguments.verbose is None else logging.INFO if arguments.verbose is False else logging.DEBUG)
-    print('Script arguments: ', arguments)
+    logger.info('Script arguments: {}'.format(arguments))
     args = vars(parser.parse_args())
     db_name = 'ensembl_ontology_{}'.format(arguments.release)
     options = {'drop': not arguments.keep, 'echo': arguments.verbose, 'db_version': arguments.release}
@@ -64,12 +65,18 @@ if __name__ == "__main__":
         options.update({'pool_size': None})
     else:
         db_url = rreplace('{}/{}?charset=utf8'.format(arguments.host_url, db_name), '//', '/', 1)
-    print('Db Url set to:', db_url)
-    print('Loader arguments:', db_url, options)
+    if arguments.slice is not None:
+        slices = arguments.slice.split('-')
+    else:
+        slices = None
+    logger.info('Db Url set to: {}'.format(db_url))
+    logger.info('Loader arguments: {} {}'.format(db_url, options))
+    logger.info('Slices: {}'.format(slices))
+
     response = input("Confirm to proceed (y/N)? ")
 
     if response.upper() != 'Y':
-        logging.info('Process cancelled')
+        logger.info('Process cancelled')
         exit(0)
 
     loader = OlsLoader(db_url, **options)
@@ -80,5 +87,8 @@ if __name__ == "__main__":
         logger.info('Ontology %s reset', arguments.ontology)
     logger.info('Loading ontology %s', arguments.ontology)
     with dal.session_scope() as session:
-        n_terms, n_ignored = loader.load_ontology_terms(arguments.ontology, 0, 20)
+        if slices is not None:
+            n_terms, n_ignored = loader.load_ontology_terms(arguments.ontology, int(slices[0]), int(slices[1]))
+        else:
+            n_terms, n_ignored = loader.load_ontology_terms(arguments.ontology)
     logger.info('...Done')
