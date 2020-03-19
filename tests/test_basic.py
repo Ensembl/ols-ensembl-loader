@@ -24,7 +24,7 @@ import sqlalchemy
 import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
-from bio.ensembl.ontology.loader.ols import OlsLoader
+from bio.ensembl.ontology.loader.ols import OlsLoader, init_meta
 from ebi.ols.api.client import OlsClient
 from ebi.ols.api.exceptions import NotFoundException
 
@@ -398,7 +398,8 @@ class TestOLSLoaderRemote(unittest.TestCase):
         ontology_name = 'BFO'
         self.loader.options['wipe'] = True
         self.loader.options['db_version'] = '99'
-        self.loader.init_meta()
+
+        init_meta(self.db_url, **self.loader.options)
         with dal.session_scope() as session:
             m_ontology = self.loader.load_ontology(ontology_name, session)
             session.add(m_ontology)
@@ -521,12 +522,8 @@ class TestOLSLoaderBasic(unittest.TestCase):
         dal.wipe_schema(self.db_url)
 
     def testMeta(self):
+        init_meta(self.db_url)
+
         session = dal.get_session()
-        self.loader.init_meta()
         metas = session.query(Meta).all()
         self.assertGreaterEqual(len(metas), 2)
-
-    def testLoadRelatedSynonyms(self):
-        self.loader.options['process_relations'] = False
-        self.loader.options['process_parents'] = False
-

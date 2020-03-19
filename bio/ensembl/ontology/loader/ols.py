@@ -17,16 +17,16 @@ import logging
 from os import getenv
 from os.path import join
 
-import ebi.ols.api.exceptions
-import ebi.ols.api.helpers as helpers
 import inflection
 import itypes
 from coreapi.exceptions import CoreAPIException
-from ebi.ols.api.client import OlsClient
 from sqlalchemy.orm.exc import NoResultFound
 
+import ebi.ols.api.exceptions
+import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.loader.db import dal
 from bio.ensembl.ontology.loader.models import *
+from ebi.ols.api.client import OlsClient
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,20 @@ def has_accession(o_term):
     return o_term.accession is not None
 
 
-class OlsLoader(object):
+def init_meta(db_url, **options):
+    dal.db_init(db_url, **options)
+    db_version = int(getenv('ENS_VERSION', 99))
+    with dal.session_scope() as session:
+        metas = {
+            'schema_version': db_version,
+            'schema_type': 'ontology',
+            'patch': 'patch_{}_{}_a.sql|schema version'.format(db_version - 1, db_version)
+        }
+        for meta_key, meta_value in metas.items():
+            get_one_or_create(Meta, session, meta_key=meta_key, create_method_kwargs=dict(meta_value=meta_value))
+
+
+class OlsLoader:
     """ class loader for mapping retrieved DTO from OLS client into expected database fields """
     __relation_map = {
         'parents': 'is_a',
@@ -55,17 +68,17 @@ class OlsLoader(object):
         'hasRelatedSynonym': 'RELATED'
     }
 
-    _default_options = dict(
-        echo=False,
-        wipe=False,
-        db_version=getenv('ENS_VERSION', 99),
-        max_retry=5,
-        timeout=720,
-        process_relations=True,
-        process_parents=True,
-        page_size=1000,
-        output_dir=getenv("HOME")
-    )
+    _default_options = {
+        'echo': False,
+        'wipe': False,
+        'db_version': getenv('ENS_VERSION', 99),
+        'max_retry': 5,
+        'timeout': 720,
+        'process_relations': True,
+        'process_parents': True,
+        'page_size': 1000,
+        'output_dir': getenv("HOME")
+    }
 
     allowed_ontologies = ['GO', 'SO', 'PATO', 'HP', 'VT', 'EFO', 'PO', 'EO', 'TO', 'CHEBI', 'PR', 'FYPO', 'PECO', 'BFO',
                           'BTO', 'CL', 'CMO', 'ECO', 'MOD', 'MP', 'OGMS', 'UO', 'MONDO', 'PHI']
@@ -78,9 +91,10 @@ class OlsLoader(object):
         self.retry = 0
         self.db_init = False
         dal.db_init(self.db_url, **self.options)
+        self.current_ontology = None
         logger.info('Loaded with options %s ', self.options)
         logger.info('DB url %s ', self.db_url)
-        self.current_ontology = None
+        logger.info('%s ', self.db_url)
 
     def get_report_logger(self):
         report_logger = logging.getLogger(self.current_ontology + '_report')
@@ -100,21 +114,6 @@ class OlsLoader(object):
             report.info(messages[0] % messages[1:])
         else:
             report.info(messages[0])
-
-    def init_meta(self):
-        with dal.session_scope() as session:
-            prev_version = int(self.options.get('db_version')) - 1
-            metas = {
-                'schema_version': self.options.get('db_version'),
-                'schema_type': 'ontology',
-                'patch': 'patch_{}_{}_a.sql|schema version'.format(prev_version, self.options.get('db_version'))
-            }
-            for meta_key, meta_value in metas.items():
-                get_one_or_create(Meta,
-                                  session,
-                                  meta_key=meta_key,
-                                  create_method_kwargs=dict(meta_value=meta_value))
-        self.db_init = True
 
     def load_ontology(self, ontology, session, namespace=''):
         """

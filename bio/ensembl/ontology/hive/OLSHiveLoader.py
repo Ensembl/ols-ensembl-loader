@@ -19,7 +19,7 @@ from urllib import parse
 
 import eHive
 
-from bio.ensembl.ontology.loader.ols import OlsLoader
+from bio.ensembl.ontology.loader.ols import OlsLoader, OlsMetaLoader, init_meta
 
 
 class OLSHiveLoader(eHive.BaseRunnable):
@@ -69,8 +69,7 @@ class OLSHiveLoader(eHive.BaseRunnable):
         logger.addHandler(ols_error_handler)
         logger.setLevel(logging.ERROR)
         options['output_dir'] = self.param_required('output_dir')
-        self.ols_loader = OlsLoader(self.param_required('db_url'), **options)
-        self.ols_loader.init_meta()
+        init_meta(self.param_required('db_url'), **options)
 
     def run(self):
         raise RuntimeError('This class is not meant to be an actual Hive Wrapper')
