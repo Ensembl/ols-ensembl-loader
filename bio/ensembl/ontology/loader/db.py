@@ -49,8 +49,12 @@ class DataAccessLayer:
                                                convert_unicode=True,
                                                **extra_params)
         self.options = options or {}
-        self.metadata.create_all(self.engine)
         self.connection = self.engine.connect()
+
+    def create_schema(self):
+        if not self.engine:
+            raise RuntimeError('Please call db_init first')
+        self.metadata.create_all(self.engine)
 
     def wipe_schema(self, conn_string):
         engine = sqlalchemy.create_engine(conn_string, echo=False)

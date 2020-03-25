@@ -12,30 +12,37 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+import configparser
 import datetime
-import logging
+import logging.config
+import os
 import unittest
 import warnings
-import os
-import configparser
+from os.path import dirname
 
+import eHive
 import sqlalchemy
+from eHive.Process import Job
 
 import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
-from bio.ensembl.ontology.loader.ols import OlsLoader, init_meta
+from bio.ensembl.ontology.loader.ols import OlsLoader, init_schema, log_format
 from ebi.ols.api.client import OlsClient
 from ebi.ols.api.exceptions import NotFoundException
+from ensembl.ontology.hive.OLSHiveLoader import OLSHiveLoader
+from ensembl.ontology.hive.OLSOntologyLoader import OLSOntologyLoader
+# TODO add potential multi processing thread safe logger class
+#  https://mattgathu.github.io/multiprocessing-logging-in-python/
+# config = yaml.safe_load(open(dirname(__file__) + '/logging.yaml'))
+# logging.config.dictConfig(config)
+from ensembl.ontology.hive.OLSTermsLoader import OLSTermsLoader
 
 logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s %(levelname)s : %(name)s.%(funcName)s(%(lineno)d) - %(message)s',
+                    format=log_format,
                     datefmt='%m-%d %H:%M:%S')
 
 logger = logging.getLogger(__name__)
-
-logging.getLogger('urllib3.connectionpool').setLevel(logging.FATAL)
-logging.getLogger('ebi.ols.api').setLevel(logging.WARNING)
 
 
 def read_env():
@@ -60,7 +67,8 @@ read_env()
 
 class TestOLSLoaderRemote(unittest.TestCase):
     _multiprocess_shared_ = False
-    db_url = os.getenv('DB_TEST_URL', 'mysql+pymysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
+    db_url = os.getenv('DB_TEST_URL',
+                       'mysql+pymysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
     ols_api_url = 'https://www.ebi.ac.uk/ols/api'
 
     @classmethod
@@ -74,6 +82,9 @@ class TestOLSLoaderRemote(unittest.TestCase):
     def setUp(self):
         warnings.simplefilter("ignore", ResourceWarning)
         self.loader = OlsLoader(self.db_url, echo=False, output_dir='.')
+        self.loader.allowed_ontologies = ['GO', 'SO', 'PATO', 'HP', 'VT', 'EFO', 'PO', 'EO', 'TO', 'CHEBI', 'PR',
+                                          'FYPO', 'PECO', 'BFO',
+                                          'BTO', 'CL', 'CMO', 'ECO', 'MOD', 'MP', 'OGMS', 'UO', 'MONDO', 'PHI', 'DUO']
         self.client = OlsClient(base_site=self.ols_api_url)
 
     def tearDown(self):
@@ -399,7 +410,7 @@ class TestOLSLoaderRemote(unittest.TestCase):
         self.loader.options['wipe'] = True
         self.loader.options['db_version'] = '99'
 
-        init_meta(self.db_url, **self.loader.options)
+        init_schema(self.db_url, **self.loader.options)
         with dal.session_scope() as session:
             m_ontology = self.loader.load_ontology(ontology_name, session)
             session.add(m_ontology)
@@ -502,12 +513,15 @@ class TestOLSLoaderRemote(unittest.TestCase):
 
 class TestOLSLoaderBasic(unittest.TestCase):
     _multiprocess_shared_ = False
-    db_url = os.getenv('DB_TEST_URL', 'mysql+pymysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
+    db_url = os.getenv('DB_TEST_URL',
+                       'mysql+pymysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
     ols_api_url = os.getenv('OLS_API_URL', 'http://localhost:8080/api')
+    test_ontologies = ['AERO', 'DUO', 'BFO', 'EO', 'SO', 'ECO', 'PHI']
 
     @classmethod
     def setUpClass(cls):
         logger.info('Using %s connexion string', cls.db_url)
+        warnings.simplefilter("ignore", ResourceWarning)
         try:
             dal.wipe_schema(cls.db_url)
         except sqlalchemy.exc.InternalError as e:
@@ -515,15 +529,89 @@ class TestOLSLoaderBasic(unittest.TestCase):
 
     def setUp(self):
         warnings.simplefilter("ignore", ResourceWarning)
-        self.loader = OlsLoader(self.db_url, echo=False, output_dir='.')
+        self.loader = OlsLoader(self.db_url, echo=False, output_dir='.', verbosity=logging.DEBUG,
+                                allowed_ontologies=self.test_ontologies)
         self.client = OlsClient(base_site=self.ols_api_url)
 
-    def tearDown(self):
-        dal.wipe_schema(self.db_url)
+    def testLogger(self):
+        self.loader = OlsLoader(self.db_url, echo=False, output_dir='.', verbosity='DEBUG')
 
-    def testMeta(self):
-        init_meta(self.db_url)
+        with dal.session_scope() as session:
+            self.loader.load_ontology('bfo', session)
+            self.assertTrue(os.path.isfile(os.path.join(dirname(__file__), 'bfo.ontology.log')))
+            self.loader.load_ontology_terms('bfo', 0, 15)
+            self.assertTrue(os.path.isfile(os.path.join(dirname(__file__), 'bfo.terms.0.15.log')))
 
-        session = dal.get_session()
-        metas = session.query(Meta).all()
-        self.assertGreaterEqual(len(metas), 2)
+    def testHiveLoader(self):
+        class RunnableWithParams(OLSHiveLoader):
+            def __init__(self, d):
+                self._BaseRunnable__params = eHive.Params.ParamContainer(d)
+                self.input_job = Job()
+                self.input_job.transient_error = True
+                self.debug = 1
+
+        hive_loader = RunnableWithParams({
+            'ontology_name': 'duo',
+            'ens_version': 100,
+            'db_url': self.db_url,
+            'output_dir': dirname(__file__)
+        })
+        hive_loader.run()
+        with dal.session_scope() as session:
+            metas = session.query(Meta).all()
+            self.assertGreaterEqual(len(metas), 2)
+            schema_type = session.query(Meta).filter_by(meta_key='schema_type').one()
+            self.assertEqual(schema_type.meta_value, 'ontology')
+            schema_type = session.query(Meta).filter_by(meta_key='schema_version').one()
+            self.assertEqual(schema_type.meta_value, '100')
+            schema_patch = session.query(Meta).filter_by(meta_key='patch').one()
+            self.assertEqual(schema_patch.meta_value, 'patch_99_100_a.sql|schema version')
+
+    def testOntologyLoader(self):
+        class OntologyLoader(OLSOntologyLoader):
+            def __init__(self, d):
+                self._BaseRunnable__params = eHive.Params.ParamContainer(d)
+                self._BaseRunnable__read_pipe = open('hive.in', mode='rb', buffering=0)
+                self._BaseRunnable__write_pipe = open('hive.out', mode='wb', buffering=0)
+                self.input_job = Job()
+                self.input_job.transient_error = True
+                self.debug = 1
+
+        hive_loader = OntologyLoader({
+            'ontology_name': 'aero',
+            'ens_version': 100,
+            'db_url': self.db_url,
+            'output_dir': dirname(__file__),
+            'verbosity': '4',
+            'wipe_one': 0,
+            'allowed_ontologies': self.test_ontologies,
+            'ols_api_url': self.ols_api_url
+        })
+
+        hive_loader.run()
+        with dal.session_scope() as session:
+            self.assertIsNotNone(session.query(Meta).filter_by(meta_key='AERO_load_date').one())
+            self.assertIsNotNone(session.query(Meta).filter_by(meta_key='AERO_file_date').one())
+
+    def testTermHiveLoader(self):
+        class TermLoader(OLSTermsLoader):
+            def __init__(self, d):
+                self._BaseRunnable__params = eHive.Params.ParamContainer(d)
+                self.input_job = Job()
+                self.input_job.transient_error = True
+                self.debug = 1
+
+        term_loader = TermLoader({
+            'ontology_name': 'aero',
+            'db_url': self.db_url,
+            'output_dir': dirname(__file__),
+            'verbosity': '4',
+            '_start_term_index': 100,
+            '_end_term_index': 150,
+            'ols_api_url': self.ols_api_url,
+            'allowed_ontologies': self.test_ontologies,
+            'page_size': 50
+        })
+        term_loader.run()
+        with dal.session_scope() as session:
+            self.assertTrue(True)
