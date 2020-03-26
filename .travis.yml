@@ -22,6 +22,7 @@ install:
 # command to run tests
 script:
   - nosetests tests.test_basic --verbose --with-coverage --cover-package=bio.ensembl
+  - nosetests tests.test_remote --verbose --with-coverage --cover-package=bio.ensembl
 before_script:
   - mysql -e 'CREATE DATABASE ols_test_ontology;' -u root
 after_success:
