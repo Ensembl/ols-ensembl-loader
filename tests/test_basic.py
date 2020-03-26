@@ -29,13 +29,14 @@ from bio.ensembl.ontology.loader.models import *
 from bio.ensembl.ontology.loader.ols import OlsLoader, init_schema, log_format
 from ebi.ols.api.client import OlsClient
 from ebi.ols.api.exceptions import NotFoundException
-from ensembl.ontology.hive.OLSHiveLoader import OLSHiveLoader
-from ensembl.ontology.hive.OLSOntologyLoader import OLSOntologyLoader
+from bio.ensembl.ontology.hive.OLSHiveLoader import OLSHiveLoader
+from bio.ensembl.ontology.hive.OLSOntologyLoader import OLSOntologyLoader
+from bio.ensembl.ontology.hive.OLSTermsLoader import OLSTermsLoader
+
 # TODO add potential multi processing thread safe logger class
 #  https://mattgathu.github.io/multiprocessing-logging-in-python/
 # config = yaml.safe_load(open(dirname(__file__) + '/logging.yaml'))
 # logging.config.dictConfig(config)
-from ensembl.ontology.hive.OLSTermsLoader import OLSTermsLoader
 
 logging.basicConfig(level=logging.DEBUG,
                     format=log_format,
