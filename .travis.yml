@@ -6,11 +6,14 @@ services:
   - mysql
   - docker
 before_install:
+  - git submodule sync
+  - git submodule update --init --recursive --remote
   - docker build -t ols tests/ols-docker
   - docker run -d -p 127.0.0.1:8080:8080 -t ols
   - docker ps -a
 install:
   - pip install -r requirements.txt
+  - pip install -e git+https://github.com/Ensembl/ols-client.git@bugfix/ontology_load#egg=ebi-ols-client
   - pip install nose
   - pip install coverage
   - pip install python-coveralls
