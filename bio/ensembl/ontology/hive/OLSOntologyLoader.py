@@ -29,7 +29,9 @@ class OLSOntologyLoader(eHive.BaseRunnable):
         options = param_defaults()
         options['wipe'] = self.param('wipe_one')
         self.input_job.transient_error = False
-        options['ols_api_url'] = self.pa
+        options['ols_api_url'] = self.param('ols_api_url')
+        options['page_size'] = self.param('page_size')
+        options['output_dir'] = self.param('output_dir')
         ols_loader = OlsLoader(self.param_required('db_url'), **options)
         # TODO update options with loader params
         logging.basicConfig(level=log_levels.get(self.param('verbosity'), '2'),

@@ -44,6 +44,7 @@ def init_schema(db_url, **options):
     dal.db_init(db_url, **options)
     dal.create_schema()
     db_version = options.get('ens_version', 99)
+    print('db_version', db_version)
     with dal.session_scope() as session:
         metas = {
             'schema_version': db_version,
@@ -272,8 +273,8 @@ class OlsLoader:
                 report.info('- Loading all terms (%s)', len(terms))
             with dal.session_scope() as session:
                 for o_term in terms:
-                    terms_log.debug('Term %s', o_term)
                     if o_term.is_defining_ontology and has_accession(o_term):
+                        terms_log.debug('Term %s', o_term)
                         m_ontology, created = get_one_or_create(Ontology,
                                                                 session,
                                                                 name=self.current_ontology,
@@ -292,8 +293,8 @@ class OlsLoader:
                         if term:
                             session.add(term)
                             nb_terms += 1
-                        terms_log.info('Ignored term [%s:%s]', o_term.is_defining_ontology, o_term.short_form)
                     else:
+                        terms_log.info('Ignored term [%s:%s]', o_term.is_defining_ontology, o_term.short_form)
                         nb_terms_ignored += 1
                 terms_log.info('- Expected %s terms (defined in accepted ontology)', nb_terms)
                 terms_log.info('- Ignored %s terms (not defined in accepted ontology)', nb_terms_ignored)
@@ -323,7 +324,8 @@ class OlsLoader:
         else:
             raise RuntimeError('Wrong parameter')
         session.merge(m_ontology)
-        logger = self.get_term_logger(ontology)
+        self.current_ontology = m_ontology.name
+        logger = self.get_term_logger(self.current_ontology)
         logger.info("Loading term details %s", o_term)
         if has_accession(o_term):
             if not o_term.description:
@@ -355,8 +357,9 @@ class OlsLoader:
         session.query(AltId).filter(AltId.term == m_term).delete()
         if o_term.annotation.has_alternative_id:
             logger.info('Loaded AltId %s', o_term.annotation.has_alternative_id)
-            [m_term.alt_ids.append(AltId(accession=alt_id, term=m_term)) for alt_id in
-             o_term.annotation.has_alternative_id]
+            for alt_accession in o_term.annotation.has_alternative_id:
+                logger.debug('Adding AltId %s', alt_accession)
+                m_term.alt_ids.append(AltId(accession=alt_accession, term=m_term))
             logger.debug('...Done')
         else:
             logger.info('...No AltIds')

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 .. See the NOTICE file distributed with this work for additional information
    regarding copyright ownership.
@@ -83,8 +82,8 @@ class TestOLSLoaderRemote(unittest.TestCase):
         warnings.simplefilter("ignore", ResourceWarning)
         self.loader = OlsLoader(self.db_url, echo=False, output_dir='.')
         self.loader.allowed_ontologies = ['GO', 'SO', 'PATO', 'HP', 'VT', 'EFO', 'PO', 'EO', 'TO', 'CHEBI', 'PR',
-                                          'FYPO', 'PECO', 'BFO',
-                                          'BTO', 'CL', 'CMO', 'ECO', 'MOD', 'MP', 'OGMS', 'UO', 'MONDO', 'PHI', 'DUO']
+                                          'FYPO', 'PECO', 'BFO', 'BTO', 'CL', 'CMO', 'ECO', 'MOD', 'MP', 'OGMS', 'UO',
+                                          'MONDO', 'PHI', 'DUO']
         self.client = OlsClient(base_site=self.ols_api_url)
 
     def tearDown(self):
@@ -130,21 +129,6 @@ class TestOLSLoaderRemote(unittest.TestCase):
         subsets = session.query(Subset).all()
         for subset in subsets:
             self.assertNotEqual(subset.definition, subset.name)
-
-    def testSubsetEco(self):
-        self.loader.options['process_relations'] = True
-        self.loader.options['process_parents'] = True
-        with dal.session_scope() as session:
-            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/ECO_0000305",
-                                        ontology_name='ECO', type=helpers.Term)
-            m_term = self.loader.load_term(o_term, 'ECO', session)
-            session.commit()
-            subsets = session.query(Subset).all()
-            subsets_name = [sub.name for sub in subsets]
-            term_subsets = m_term.subsets.split(',')
-            self.assertEqual(set(subsets_name), set(term_subsets))
-            for definition in subsets:
-                self.assertIsNotNone(definition)
 
     def testTermInvalidDefinition(self):
         '''
@@ -238,13 +222,6 @@ class TestOLSLoaderRemote(unittest.TestCase):
             session.add(m_term)
             self.assertIsInstance(session.query(Subset).filter_by(name='efo_slim').one(), Subset)
 
-    def testRelationSingleTerm(self):
-        with dal.session_scope() as session:
-            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/ECO_0007571')
-            m_term = self.loader.load_term(o_term, 'ECO', session)
-            session.add(m_term)
-            session.commit()
-
     def testTrickTerm(self):
         self.loader.options['process_relations'] = True
         self.loader.options['process_parents'] = False
@@ -259,16 +236,6 @@ class TestOLSLoaderRemote(unittest.TestCase):
             for relation in m_term.parent_terms:
                 found = found or (relation.parent_term.accession == 'CHEBI:24431')
         self.assertTrue(found)
-
-    def testAltIds(self):
-        self.loader.options['process_relations'] = False
-        self.loader.options['process_parents'] = False
-
-        with dal.session_scope() as session:
-            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/GO_0005261')
-            m_term = self.loader.load_term(o_term, 'AERO', session)
-            session.add(m_term)
-            self.assertGreaterEqual(len(m_term.alt_ids), 2)
 
     def testSubsets(self):
         self.loader.options['process_relations'] = False
@@ -312,10 +279,6 @@ class TestOLSLoaderRemote(unittest.TestCase):
             session.add(m_term)
             self.assertGreaterEqual(len(m_term.parent_terms), 0)
 
-    def testOntologiesList(self):
-        self.assertIsInstance(self.loader.allowed_ontologies, list)
-        self.assertIn('GO', self.loader.allowed_ontologies)
-
     def testSingleTerm(self):
         self.loader.options['process_relations'] = True
         self.loader.options['process_parents'] = True
@@ -334,7 +297,6 @@ class TestOLSLoaderRemote(unittest.TestCase):
             o_ontology = self.client.ontology('GO')
             term = helpers.Term(ontology_name='GO', iri='http://purl.obolibrary.org/obo/GO_0000002')
             o_term = self.client.detail(term)
-            print(o_term.description, o_term.label)
             m_term = self.loader.load_term(o_term, o_ontology, session)
             self.assertEqual(m_term.ontology.name, 'GO')
             with self.assertRaises(RuntimeError):
@@ -355,6 +317,34 @@ class TestOLSLoaderRemote(unittest.TestCase):
             self.assertIn('λ', m_term.description)
         else:
             self.skipTest("Character not present in retrieved term from OLS")
+
+
+class TestOLSLoaderBasic(unittest.TestCase):
+    _multiprocess_shared_ = False
+    db_url = os.getenv('DB_TEST_URL',
+                       'mysql+pymysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
+    ols_api_url = os.getenv('OLS_API_URL', 'http://localhost:8080/api')
+    test_ontologies = ['AERO', 'DUO', 'BFO', 'EO', 'SO', 'ECO', 'PHI', 'OGMS']
+
+    @classmethod
+    def setUpClass(cls):
+        logger.info('Using %s connexion string', cls.db_url)
+        warnings.simplefilter("ignore", ResourceWarning)
+        try:
+            dal.wipe_schema(cls.db_url)
+        except sqlalchemy.exc.InternalError as e:
+            logger.info("Unable to wipe schema %s", e)
+
+    def setUp(self):
+        warnings.simplefilter("ignore", ResourceWarning)
+        try:
+            dal.wipe_schema(self.db_url)
+        except sqlalchemy.exc.InternalError as e:
+            logger.info("Unable to wipe schema %s", e)
+        self.loader = OlsLoader(self.db_url, echo=False, output_dir='.', verbosity=logging.DEBUG,
+                                allowed_ontologies=self.test_ontologies,
+                                ols_api_url=self.ols_api_url)
+        self.client = OlsClient(base_site=self.ols_api_url)
 
     def testCascadeDelete(self):
         if 'mysql' not in self.db_url:
@@ -405,39 +395,13 @@ class TestOLSLoaderRemote(unittest.TestCase):
             self.assertEqual(session.query(Relation).count(), 0)
             self.assertEqual(session.query(Closure).count(), 0)
 
-    def testLoadTimeMeta(self):
-        ontology_name = 'BFO'
-        self.loader.options['wipe'] = True
-        self.loader.options['db_version'] = '99'
-
-        init_schema(self.db_url, **self.loader.options)
-        with dal.session_scope() as session:
-            m_ontology = self.loader.load_ontology(ontology_name, session)
-            session.add(m_ontology)
-            self.assertIsInstance(m_ontology, Ontology)
-        session = dal.get_session()
-        meta_file_date = session.query(Meta).filter_by(meta_key=ontology_name + '_file_date').one()
-        meta_start = session.query(Meta).filter_by(meta_key=ontology_name + '_load_date').one()
-        meta_schema = session.query(Meta).filter_by(meta_key='patch').one()
-        self.assertEqual('patch_98_99_a.sql|schema version', meta_schema.meta_value)
-        self.assertTrue(
-            datetime.datetime.strptime(meta_start.meta_value, ontology_name.upper() + "/%c") < datetime.datetime.now())
-        logger.debug('meta load_all date: %s', meta_start)
-        logger.debug('meta file date: %s', meta_file_date)
-        try:
-            datetime.datetime.strptime(meta_file_date.meta_value, ontology_name.upper() + "/%c")
-            datetime.datetime.strptime(meta_start.meta_value, ontology_name.upper() + "/%c")
-        except ValueError:
-            self.fail('Wrong date format')
-
     def testLoadOntologyTerms(self):
         session = dal.get_session()
-        ontology_name = 'CIO'
+        ontology_name = 'PHI'
         self.loader.load_ontology(ontology_name, session)
         expected, ignored = self.loader.load_ontology_terms(ontology_name)
         logger.info('Expected terms %s', expected)
-        s_terms = session.query(Term).filter(Ontology.name == ontology_name)
-        inserted = s_terms.count()
+        inserted = session.query(Term).count()
         logger.info('Inserted terms %s', inserted)
         self.assertEqual(expected, inserted)
         logger.info('Testing unknown ontology')
@@ -448,14 +412,14 @@ class TestOLSLoaderRemote(unittest.TestCase):
     def testLoadOntology(self):
         # test retrieve
         # test try to create duplicated
-        ontology_name = 'CVDO'
+        ontology_name = 'ogms'
 
         with dal.session_scope() as session:
             m_ontology = self.loader.load_ontology(ontology_name, session)
             logger.info('Loaded ontology %s', m_ontology)
             logger.info('number of Terms %s', m_ontology.number_of_terms)
             r_ontology = session.query(Ontology).filter_by(name=ontology_name,
-                                                           namespace='cvdo').one()
+                                                           namespace='OGMS').one()
             ontology_id = r_ontology.id
             logger.info('(RE) Loaded ontology %s', r_ontology)
             self.assertEqual(m_ontology.name, r_ontology.name)
@@ -481,19 +445,7 @@ class TestOLSLoaderRemote(unittest.TestCase):
         ontologies = session.query(Ontology).filter_by(name=ontology_name)
         self.assertEqual(ontologies.count(), 2)
         self.loader.final_report(ontology_name)
-        self.assertTrue(os.path.isfile(ontology_name + '_report.log'))
-
-    def testRelatedNonExpected(self):
-        self.loader.options['process_relations'] = True
-        self.loader.options['process_parents'] = True
-        with dal.session_scope() as session:
-            ontology_name = 'ECO'
-            expected, _ignored = self.loader.load_ontology_terms(ontology_name, start=0, end=50)
-            logger.info('Expected terms %s', expected)
-            s_terms = session.query(Term).filter(Ontology.name == ontology_name)
-            inserted = s_terms.count()
-            logger.info('Inserted terms %s', inserted)
-            self.assertGreaterEqual(inserted, expected)
+        self.assertTrue(os.path.isfile(ontology_name + '.ontology.log'))
 
     def testUpperCase(self):
         ontology_name = 'OGMS'
@@ -510,28 +462,42 @@ class TestOLSLoaderRemote(unittest.TestCase):
                 if term.ontology.name == 'OGMS':
                     self.assertTrue(term.ontology_id == onto_id)
 
+    def testRelatedNonExpected(self):
+        self.loader.options['process_relations'] = True
+        self.loader.options['process_parents'] = True
+        with dal.session_scope() as session:
+            ontology_name = 'ECO'
+            expected, _ignored = self.loader.load_ontology_terms(ontology_name, start=0, end=50)
+            logger.info('Expected terms %s', expected)
+            s_terms = session.query(Term).filter(Ontology.name == ontology_name)
+            inserted = s_terms.count()
+            logger.info('Inserted terms %s', inserted)
+            self.assertGreaterEqual(inserted, expected)
 
-class TestOLSLoaderBasic(unittest.TestCase):
-    _multiprocess_shared_ = False
-    db_url = os.getenv('DB_TEST_URL',
-                       'mysql+pymysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
-    ols_api_url = os.getenv('OLS_API_URL', 'http://localhost:8080/api')
-    test_ontologies = ['AERO', 'DUO', 'BFO', 'EO', 'SO', 'ECO', 'PHI']
+    def testLoadTimeMeta(self):
+        ontology_name = 'BFO'
+        self.loader.options['wipe'] = True
+        self.loader.options['ens_version'] = 99
 
-    @classmethod
-    def setUpClass(cls):
-        logger.info('Using %s connexion string', cls.db_url)
-        warnings.simplefilter("ignore", ResourceWarning)
+        init_schema(self.db_url, **self.loader.options)
+        with dal.session_scope() as session:
+            m_ontology = self.loader.load_ontology(ontology_name, session)
+            session.add(m_ontology)
+            self.assertIsInstance(m_ontology, Ontology)
+        session = dal.get_session()
+        meta_file_date = session.query(Meta).filter_by(meta_key=ontology_name + '_file_date').one()
+        meta_start = session.query(Meta).filter_by(meta_key=ontology_name + '_load_date').one()
+        meta_schema = session.query(Meta).filter_by(meta_key='patch').one()
+        self.assertEqual('patch_98_99_a.sql|schema version', meta_schema.meta_value)
+        self.assertTrue(
+            datetime.datetime.strptime(meta_start.meta_value, ontology_name.upper() + "/%c") < datetime.datetime.now())
+        logger.debug('meta load_all date: %s', meta_start)
+        logger.debug('meta file date: %s', meta_file_date)
         try:
-            dal.wipe_schema(cls.db_url)
-        except sqlalchemy.exc.InternalError as e:
-            logger.info("Unable to wipe schema %s", e)
-
-    def setUp(self):
-        warnings.simplefilter("ignore", ResourceWarning)
-        self.loader = OlsLoader(self.db_url, echo=False, output_dir='.', verbosity=logging.DEBUG,
-                                allowed_ontologies=self.test_ontologies)
-        self.client = OlsClient(base_site=self.ols_api_url)
+            datetime.datetime.strptime(meta_file_date.meta_value, ontology_name.upper() + "/%c")
+            datetime.datetime.strptime(meta_start.meta_value, ontology_name.upper() + "/%c")
+        except ValueError:
+            self.fail('Wrong date format')
 
     def testLogger(self):
         self.loader = OlsLoader(self.db_url, echo=False, output_dir='.', verbosity='DEBUG')
@@ -601,17 +567,70 @@ class TestOLSLoaderBasic(unittest.TestCase):
                 self.input_job.transient_error = True
                 self.debug = 1
 
-        term_loader = TermLoader({
-            'ontology_name': 'aero',
+        params_set = {
+            'ontology_name': 'bfo',
             'db_url': self.db_url,
             'output_dir': dirname(__file__),
             'verbosity': '4',
-            '_start_term_index': 100,
-            '_end_term_index': 150,
+            '_start_term_index': 0,
+            '_end_term_index': 19,
             'ols_api_url': self.ols_api_url,
             'allowed_ontologies': self.test_ontologies,
-            'page_size': 50
-        })
+            'page_size': 20
+        }
+
+        term_loader = TermLoader(params_set)
         term_loader.run()
         with dal.session_scope() as session:
-            self.assertTrue(True)
+            self.assertIsNotNone(session.query(Ontology).filter_by(name='BFO').one())
+            self.assertGreaterEqual(session.query(Term).count(), 17)
+            self.assertGreaterEqual(session.query(Relation).count(), 17)
+            self.assertGreaterEqual(session.query(RelationType).count(), 1)
+
+        params_set['_start_term_index'] = 20
+        params_set['_end_term_index'] = 100
+        term_loader = TermLoader(params_set)
+        term_loader.run()
+        with dal.session_scope() as session:
+            self.assertIsNotNone(session.query(Ontology).filter_by(name='BFO').one())
+            self.assertGreaterEqual(session.query(Term).count(), 18)
+            self.assertGreaterEqual(session.query(Relation).count(), 18)
+            self.assertEqual(session.query(RelationType).count(), 1)
+        self.assertTrue(os.path.isfile(os.path.join(dirname(__file__), 'bfo.ontology.log')))
+        self.assertTrue(os.path.isfile(os.path.join(dirname(__file__), 'bfo.terms.0.15.log')))
+
+    def testRelationSingleTerm(self):
+        with dal.session_scope() as session:
+            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/ECO_0007571')
+            m_term = self.loader.load_term(o_term, 'ECO', session)
+            session.add(m_term)
+            session.commit()
+
+    def testAltIds(self):
+        self.loader.options['process_relations'] = False
+        self.loader.options['process_parents'] = False
+
+        with dal.session_scope() as session:
+            o_term = self.client.term(identifier='http://purl.obolibrary.org/obo/SO_0000569')
+            # was http://purl.obolibrary.org/obo/GO_0005261
+            m_term = self.loader.load_term(o_term, 'SO', session)
+            session.add(m_term)
+            session.commit()
+            term = session.query(Term).filter_by(accession='SO:0000569').one()
+            logger.debug("Retrieved alt Ids: %s", term.alt_ids)
+            self.assertGreaterEqual(len(term.alt_ids), 1)
+
+    def testSubsetEco(self):
+        self.loader.options['process_relations'] = True
+        self.loader.options['process_parents'] = True
+        with dal.session_scope() as session:
+            o_term = self.client.detail(iri="http://purl.obolibrary.org/obo/ECO_0000305",
+                                        ontology_name='ECO', type=helpers.Term)
+            m_term = self.loader.load_term(o_term, 'ECO', session)
+            session.commit()
+            subsets = session.query(Subset).all()
+            subsets_name = [sub.name for sub in subsets]
+            term_subsets = m_term.subsets.split(',')
+            self.assertEqual(set(subsets_name), set(term_subsets))
+            for definition in subsets:
+                self.assertIsNotNone(definition)
