@@ -22,8 +22,6 @@ from .models import Base
 
 logger = logging.getLogger(__name__)
 
-Session = sessionmaker()
-
 __all__ = ['dal']
 
 
@@ -63,8 +61,9 @@ class DataAccessLayer:
         Base.metadata.drop_all(engine)
 
     def get_session(self):
+        Session = sessionmaker()
         session = Session(bind=self.engine, autoflush=self.options.get('autoflush', False),
-                          autocommit=self.options.get('autocommit', False))
+                         autocommit=self.options.get('autocommit', False))
         logger.debug('Create a new session ...%s ', session)
         return session
 

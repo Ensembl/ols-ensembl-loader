@@ -166,3 +166,5 @@ tmp/*
 
 # dev test environment
 tests/.env
+tests/logs/*
+!tests/logs/.gitkeep

@@ -15,7 +15,7 @@ before_install:
   - export PYTHONPATH=$PWD/ensembl-hive//wrappers/python3:$PYTHONPATH
 install:
   - pip install -r requirements.txt
-  - pip install -e git+https://github.com/Ensembl/ols-client.git@bugfix/ontology_load#egg=ebi-ols-client
+  - pip install -e git+https://github.com/Ensembl/ols-client.git@master#egg=ebi-ols-client
   - pip install nose
   - pip install coverage
   - pip install python-coveralls

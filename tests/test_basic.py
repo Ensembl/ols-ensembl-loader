@@ -32,13 +32,16 @@ from bio.ensembl.ontology.loader.models import *
 from bio.ensembl.ontology.loader.ols import OlsLoader, init_schema, log_format
 from ebi.ols.api.client import OlsClient
 from ebi.ols.api.exceptions import NotFoundException
+from . import read_env
+
+read_env()
 
 # TODO add potential multi processing thread safe logger class
 #  https://mattgathu.github.io/multiprocessing-logging-in-python/
 # config = yaml.safe_load(open(dirname(__file__) + '/logging.yaml'))
 # logging.config.dictConfig(config)
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format=log_format,
                     datefmt='%m-%d %H:%M:%S')
 
@@ -87,7 +90,7 @@ class TestOLSLoaderBasic(unittest.TestCase):
             dal.wipe_schema(self.db_url)
         except sqlalchemy.exc.InternalError as e:
             logger.info("Unable to wipe schema %s", e)
-        self.loader = OlsLoader(self.db_url, echo=False, output_dir='.', verbosity=logging.DEBUG,
+        self.loader = OlsLoader(self.db_url, echo=False, output_dir='./logs', verbosity=logging.DEBUG,
                                 allowed_ontologies=self.test_ontologies,
                                 ols_api_url=self.ols_api_url)
         self.client = OlsClient(base_site=self.ols_api_url)
@@ -250,9 +253,9 @@ class TestOLSLoaderBasic(unittest.TestCase):
 
         with dal.session_scope() as session:
             self.loader.load_ontology('bfo', session)
-            self.assertTrue(os.path.isfile(os.path.join(dirname(__file__), 'bfo.ontology.log')))
+            self.assertTrue(os.path.isfile(join(dirname(__file__), 'bfo.ontology.log')))
             self.loader.load_ontology_terms('bfo', 0, 15)
-            self.assertTrue(os.path.isfile(os.path.join(dirname(__file__), 'bfo.terms.0.15.log')))
+            self.assertTrue(os.path.isfile(join(dirname(__file__), 'bfo.terms.0.15.log')))
 
     def testHiveLoader(self):
         class RunnableWithParams(OLSHiveLoader):

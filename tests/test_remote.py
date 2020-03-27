@@ -12,17 +12,26 @@
    limitations under the License.
 """
 import os
+import logging
 import unittest
 import warnings
 
 import sqlalchemy
 
-from ensembl.ontology.loader.db import dal
-from ensembl.ontology.loader.models import Ontology, Term, Subset
-from ensembl.ontology.loader.ols import OlsLoader
-from ols.api import helpers as helpers
-from ols.api.client import OlsClient
-from test_basic import logger
+from bio.ensembl.ontology.loader.db import dal
+from bio.ensembl.ontology.loader.models import Ontology, Term, Subset
+from bio.ensembl.ontology.loader.ols import OlsLoader, log_format
+from ebi.ols.api import helpers as helpers
+from ebi.ols.api.client import OlsClient
+from tests import read_env
+
+read_env()
+
+logging.basicConfig(level=logging.INFO,
+                    format=log_format,
+                    datefmt='%m-%d %H:%M:%S')
+
+logger = logging.getLogger(__file__)
 
 
 class TestOLSLoaderRemote(unittest.TestCase):
@@ -41,6 +50,10 @@ class TestOLSLoaderRemote(unittest.TestCase):
 
     def setUp(self):
         warnings.simplefilter("ignore", ResourceWarning)
+        try:
+            dal.wipe_schema(self.db_url)
+        except sqlalchemy.exc.InternalError as e:
+            logger.info("Unable to wipe schema %s", e)
         self.loader = OlsLoader(self.db_url, echo=False, output_dir='.')
         self.loader.allowed_ontologies = ['GO', 'SO', 'PATO', 'HP', 'VT', 'EFO', 'PO', 'EO', 'TO', 'CHEBI', 'PR',
                                           'FYPO', 'PECO', 'BFO', 'BTO', 'CL', 'CMO', 'ECO', 'MOD', 'MP', 'OGMS', 'UO',
