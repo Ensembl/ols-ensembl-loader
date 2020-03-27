@@ -11,13 +11,12 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-import configparser
 import datetime
 import logging.config
 import os
 import unittest
 import warnings
-from os.path import dirname, join
+from os.path import join
 
 import eHive
 import sqlalchemy
@@ -81,9 +80,9 @@ class TestOLSLoaderBasic(unittest.TestCase):
         if 'mysql' not in self.db_url:
             self.skipTest('Only with mysql')
         with dal.session_scope() as session:
-            m_ontology = Ontology(name='GO', _namespace='namespace', version='1', title='Ontology test')
-            m_ontology_2 = Ontology(name='GO', _namespace='namespace 2', version='1', title='Ontology test 2')
-            m_ontology_3 = Ontology(name='FPO', _namespace='namespace 3', version='1', title='Ontology test 2')
+            m_ontology = Ontology(id=1000, name='GO', _namespace='namespace', version='1', title='Ontology test')
+            m_ontology_2 = Ontology(id=1001, name='GO', _namespace='namespace 2', version='1', title='Ontology test 2')
+            m_ontology_3 = Ontology(id=1002, name='FPO', _namespace='namespace 3', version='1', title='Ontology test 2')
             session.add(m_ontology)
             session.add(m_ontology_2)
             session.add(m_ontology_3)
@@ -91,23 +90,27 @@ class TestOLSLoaderBasic(unittest.TestCase):
                                                   session,
                                                   name='is_a')
             for i in range(0, 5):
-                m_term = Term(accession='GO:0000%s' % i, name='Term %s' % i, ontology=m_ontology)
-                m_term_2 = Term(accession='GO:1000%s' % i, name='Term %s' % i, ontology=m_ontology_2)
-                m_term_3 = Term(accession='T3:0000%s' % i, name='Term %s' % i, ontology=m_ontology_3)
-                syn_1 = Synonym(name='TS:000%s' % i, type=SynonymTypeEnum.EXACT, db_xref='REF:000%s' % i)
+                m_term = Term(term_id=100 + i, accession='GO:0000%s' % i, name='Term %s' % i, ontology=m_ontology)
+                m_term_2 = Term(term_id=1010 + i, accession='GO:1000%s' % i, name='Term %s' % i, ontology=m_ontology_2)
+                m_term_3 = Term(term_id=1020 + i, accession='T3:0000%s' % i, name='Term %s' % i, ontology=m_ontology_3)
+                syn_1 = Synonym(synonym_id=1000 + i, name='TS:000%s' % i, type=SynonymTypeEnum.EXACT,
+                                db_xref='REF:000%s' % i)
                 m_term.synonyms.append(syn_1)
-                syn_2 = Synonym(name='TS2:000%s' % i, type=SynonymTypeEnum.EXACT, db_xref='REF:000%s' % i)
+                syn_2 = Synonym(synonym_id=1010 + i, name='TS2:000%s' % i, type=SynonymTypeEnum.EXACT,
+                                db_xref='REF:000%s' % i)
                 m_term_2.synonyms.append(syn_2)
                 session.add_all([syn_1, syn_2])
-                alt_id = AltId(accession='ATL:000%s' % i)
+                alt_id = AltId(alt_id=1000 + i, accession='ATL:000%s' % i)
                 m_term.alt_ids.append(alt_id)
                 session.add(alt_id)
                 m_term.add_child_relation(session=session, rel_type=rel_type, child_term=m_term_3)
                 m_term.add_parent_relation(session=session, rel_type=rel_type, parent_term=m_term_2)
-                closure_1 = Closure(child_term=m_term, parent_term=m_term_2, distance=1, ontology=m_ontology)
-                closure_2 = Closure(parent_term=m_term, child_term=m_term_3, distance=3, ontology=m_ontology_2)
-                closure_3 = Closure(parent_term=m_term_2, child_term=m_term_3, subparent_term=m_term, distance=2,
-                                    ontology=m_ontology_3)
+                closure_1 = Closure(closure_id=1000 + i, child_term=m_term, parent_term=m_term_2, distance=1,
+                                    ontology=m_ontology)
+                closure_2 = Closure(closure_id=1010 + i, parent_term=m_term, child_term=m_term_3, distance=3,
+                                    ontology=m_ontology_2)
+                closure_3 = Closure(closure_id=1020 + i, parent_term=m_term_2, child_term=m_term_3, subparent_term=m_term,
+                                    distance=2, ontology=m_ontology_3)
                 session.add_all([closure_1, closure_2, closure_3])
 
             self.assertEqual(session.query(Synonym).count(), 10)
