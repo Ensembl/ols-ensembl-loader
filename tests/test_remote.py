@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO,
                     datefmt='%m-%d %H:%M:%S')
 
 logger = logging.getLogger(__file__)
-
+log_dir = os.path.join(os.path.dirname(__file__), 'logs')
 
 class TestOLSLoaderRemote(unittest.TestCase):
     _multiprocess_shared_ = False
@@ -54,7 +54,7 @@ class TestOLSLoaderRemote(unittest.TestCase):
             dal.wipe_schema(self.db_url)
         except sqlalchemy.exc.InternalError as e:
             logger.info("Unable to wipe schema %s", e)
-        self.loader = OlsLoader(self.db_url, echo=False, output_dir='.')
+        self.loader = OlsLoader(self.db_url, echo=False, output_dir=log_dir)
         self.loader.allowed_ontologies = ['GO', 'SO', 'PATO', 'HP', 'VT', 'EFO', 'PO', 'EO', 'TO', 'CHEBI', 'PR',
                                           'FYPO', 'PECO', 'BFO', 'BTO', 'CL', 'CMO', 'ECO', 'MOD', 'MP', 'OGMS', 'UO',
                                           'MONDO', 'PHI', 'DUO']

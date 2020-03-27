@@ -32,7 +32,7 @@ from bio.ensembl.ontology.loader.models import *
 from bio.ensembl.ontology.loader.ols import OlsLoader, init_schema, log_format
 from ebi.ols.api.client import OlsClient
 from ebi.ols.api.exceptions import NotFoundException
-from . import read_env
+from tests import read_env
 
 read_env()
 
@@ -46,26 +46,7 @@ logging.basicConfig(level=logging.INFO,
                     datefmt='%m-%d %H:%M:%S')
 
 logger = logging.getLogger(__name__)
-
-
-def read_env():
-    """
-    Reads a INI file named .env in the same directory manage.py is invoked and
-    loads it as environment variables.
-    Note: At least one section must be present. If the environment variable
-    TEST_ENV is not set then the [DEFAULT] section will be loaded.
-    More info: https://docs.python.org/3/library/configparser.html
-    """
-    config = configparser.ConfigParser()
-    config.optionxform = str
-    config.read(os.path.join(os.path.dirname(__file__), '.env'))
-    section = os.environ.get("TEST_ENV", "DEFAULT")
-
-    for var, value in config[section].items():
-        os.environ.setdefault(var, value)
-
-
-read_env()
+log_dir = os.path.join(os.path.dirname(__file__), 'logs')
 
 
 class TestOLSLoaderBasic(unittest.TestCase):
