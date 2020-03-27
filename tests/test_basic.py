@@ -41,12 +41,13 @@ read_env()
 # config = yaml.safe_load(open(dirname(__file__) + '/logging.yaml'))
 # logging.config.dictConfig(config)
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format=log_format,
                     datefmt='%m-%d %H:%M:%S')
 
 logger = logging.getLogger(__name__)
-log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+base_dir = os.path.dirname(__file__)
+log_dir = os.path.join(base_dir, 'logs')
 
 
 class TestOLSLoaderBasic(unittest.TestCase):
@@ -71,7 +72,7 @@ class TestOLSLoaderBasic(unittest.TestCase):
             dal.wipe_schema(self.db_url)
         except sqlalchemy.exc.InternalError as e:
             logger.info("Unable to wipe schema %s", e)
-        self.loader = OlsLoader(self.db_url, echo=False, output_dir='./logs', verbosity=logging.DEBUG,
+        self.loader = OlsLoader(self.db_url, echo=False, output_dir=log_dir, verbosity=logging.DEBUG,
                                 allowed_ontologies=self.test_ontologies,
                                 ols_api_url=self.ols_api_url)
         self.client = OlsClient(base_site=self.ols_api_url)
@@ -175,7 +176,8 @@ class TestOLSLoaderBasic(unittest.TestCase):
         ontologies = session.query(Ontology).filter_by(name=ontology_name)
         self.assertEqual(ontologies.count(), 2)
         self.loader.final_report(ontology_name)
-        self.assertTrue(os.path.isfile(ontology_name + '.ontology.log'))
+        self.assertTrue(os.path.isfile(join(log_dir, ontology_name + '.ontology.log')))
+        self.assertTrue(os.path.isfile(join(log_dir, 'report.log')))
 
     def testUpperCase(self):
         ontology_name = 'OGMS'
@@ -230,13 +232,13 @@ class TestOLSLoaderBasic(unittest.TestCase):
             self.fail('Wrong date format')
 
     def testLogger(self):
-        self.loader = OlsLoader(self.db_url, echo=False, output_dir='.', verbosity='DEBUG')
+        self.loader = OlsLoader(self.db_url, echo=False, output_dir=log_dir, verbosity='DEBUG')
 
         with dal.session_scope() as session:
             self.loader.load_ontology('bfo', session)
-            self.assertTrue(os.path.isfile(join(dirname(__file__), 'bfo.ontology.log')))
+            self.assertTrue(os.path.isfile(join(log_dir, 'bfo.ontology.log')))
             self.loader.load_ontology_terms('bfo', 0, 15)
-            self.assertTrue(os.path.isfile(join(dirname(__file__), 'bfo.terms.0.15.log')))
+            self.assertTrue(os.path.isfile(join(log_dir, 'bfo.terms.0.15.log')))
 
     def testHiveLoader(self):
         class RunnableWithParams(OLSHiveLoader):
@@ -250,7 +252,7 @@ class TestOLSLoaderBasic(unittest.TestCase):
             'ontology_name': 'duo',
             'ens_version': 100,
             'db_url': self.db_url,
-            'output_dir': dirname(__file__)
+            'output_dir': log_dir
         })
         hive_loader.run()
         with dal.session_scope() as session:
@@ -267,8 +269,8 @@ class TestOLSLoaderBasic(unittest.TestCase):
         class OntologyLoader(OLSOntologyLoader):
             def __init__(self, d):
                 self._BaseRunnable__params = eHive.Params.ParamContainer(d)
-                self._BaseRunnable__read_pipe = open(join(dirname(__file__), 'hive.in'), mode='rb', buffering=0)
-                self._BaseRunnable__write_pipe = open(join(dirname(__file__), 'hive.out'), mode='wb', buffering=0)
+                self._BaseRunnable__read_pipe = open(join(base_dir, 'hive.in'), mode='rb', buffering=0)
+                self._BaseRunnable__write_pipe = open(join(base_dir, 'hive.out'), mode='wb', buffering=0)
                 self.input_job = Job()
                 self.input_job.transient_error = True
                 self.debug = 1
@@ -277,7 +279,7 @@ class TestOLSLoaderBasic(unittest.TestCase):
             'ontology_name': 'aero',
             'ens_version': 100,
             'db_url': self.db_url,
-            'output_dir': dirname(__file__),
+            'output_dir': log_dir,
             'verbosity': '4',
             'wipe_one': 0,
             'allowed_ontologies': self.test_ontologies,
@@ -300,7 +302,7 @@ class TestOLSLoaderBasic(unittest.TestCase):
         params_set = {
             'ontology_name': 'bfo',
             'db_url': self.db_url,
-            'output_dir': dirname(__file__),
+            'output_dir': log_dir,
             'verbosity': '4',
             '_start_term_index': 0,
             '_end_term_index': 19,
@@ -326,8 +328,8 @@ class TestOLSLoaderBasic(unittest.TestCase):
             self.assertGreaterEqual(session.query(Term).count(), 18)
             self.assertGreaterEqual(session.query(Relation).count(), 18)
             self.assertEqual(session.query(RelationType).count(), 1)
-        self.assertTrue(os.path.isfile(os.path.join(dirname(__file__), 'bfo.ontology.log')))
-        self.assertTrue(os.path.isfile(os.path.join(dirname(__file__), 'bfo.terms.0.15.log')))
+        self.assertTrue(os.path.isfile(join(log_dir, 'bfo.ontology.log')))
+        self.assertTrue(os.path.isfile(join(log_dir, 'bfo.terms.0.15.log')))
 
     def testRelationSingleTerm(self):
         with dal.session_scope() as session:

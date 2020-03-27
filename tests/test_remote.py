@@ -11,8 +11,8 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-import os
 import logging
+import os
 import unittest
 import warnings
 
@@ -33,6 +33,7 @@ logging.basicConfig(level=logging.INFO,
 
 logger = logging.getLogger(__file__)
 log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+
 
 class TestOLSLoaderRemote(unittest.TestCase):
     _multiprocess_shared_ = False
