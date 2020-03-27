@@ -1,4 +1,3 @@
-#  -*- coding: utf-8 -*-
 """
 .. See the NOTICE file distributed with this work for additional information
    regarding copyright ownership.
@@ -17,25 +16,50 @@ import logging
 from os import getenv
 from os.path import join
 
-import ebi.ols.api.exceptions
-import ebi.ols.api.helpers as helpers
 import inflection
 import itypes
 from coreapi.exceptions import CoreAPIException
-from ebi.ols.api.client import OlsClient
 from sqlalchemy.orm.exc import NoResultFound
 
+import ebi.ols.api.exceptions
+import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.loader.db import dal
 from bio.ensembl.ontology.loader.models import *
-
-logger = logging.getLogger(__name__)
+from ebi.ols.api.client import OlsClient
 
 
 def has_accession(o_term):
     return o_term.accession is not None
 
 
-class OlsLoader(object):
+def onto_logger_name(ontology_name):
+    return '.'.join([ontology_name.lower(), 'ontology'])
+
+
+def term_logger_name(ontology_name, start=0, end=0):
+    return '.'.join([ontology_name.lower(), 'terms', str(start), str(end)])
+
+
+def init_schema(db_url, **options):
+    dal.db_init(db_url, **options)
+    dal.create_schema()
+    db_version = options.get('ens_version', 99)
+    print('db_version', db_version)
+    with dal.session_scope() as session:
+        metas = {
+            'schema_version': db_version,
+            'schema_type': 'ontology',
+            'patch': 'patch_{}_{}_a.sql|schema version'.format(db_version - 1, db_version)
+        }
+        for meta_key, meta_value in metas.items():
+            get_one_or_create(Meta, session, meta_key=meta_key, create_method_kwargs=dict(meta_value=meta_value))
+
+
+log_format = '%(asctime)s %(levelname)s %(name)s.%(funcName)s: %(message)s'
+formatter = logging.Formatter(log_format)
+
+
+class OlsLoader:
     """ class loader for mapping retrieved DTO from OLS client into expected database fields """
     __relation_map = {
         'parents': 'is_a',
@@ -55,17 +79,19 @@ class OlsLoader(object):
         'hasRelatedSynonym': 'RELATED'
     }
 
-    _default_options = dict(
-        echo=False,
-        wipe=False,
-        db_version=getenv('ENS_VERSION', 99),
-        max_retry=5,
-        timeout=720,
-        process_relations=True,
-        process_parents=True,
-        page_size=1000,
-        output_dir=getenv("HOME")
-    )
+    _default_options = {
+        'echo': False,
+        'wipe': False,
+        'db_version': getenv('ENS_VERSION', 99),
+        'max_retry': 5,
+        'timeout': 720,
+        'process_relations': True,
+        'process_parents': True,
+        'page_size': 1000,
+        'output_dir': getenv("HOME"),
+        'verbosity': logging.DEBUG,
+        'ols_api_url': None
+    }
 
     allowed_ontologies = ['GO', 'SO', 'PATO', 'HP', 'VT', 'EFO', 'PO', 'EO', 'TO', 'CHEBI', 'PR', 'FYPO', 'PECO', 'BFO',
                           'BTO', 'CL', 'CMO', 'ECO', 'MOD', 'MP', 'OGMS', 'UO', 'MONDO', 'PHI']
@@ -74,47 +100,47 @@ class OlsLoader(object):
         self.db_url = url
         self.options = self._default_options
         self.options.update(options)
-        self.client = OlsClient(page_size=self.options.get('page_size'))
+        self.client = OlsClient(
+            page_size=self.options.get('page_size'),
+            base_site=self.options.get('ols_api_url'))
         self.retry = 0
+        if self.options.get('allowed_ontologies', None):
+            self.allowed_ontologies = self.options.get('allowed_ontologies')
         self.db_init = False
         dal.db_init(self.db_url, **self.options)
-        logger.info('Loaded with options %s ', self.options)
-        logger.info('DB url %s ', self.db_url)
+        dal.create_schema()
+        logging.basicConfig(level=self.options['verbosity'])
         self.current_ontology = None
+        self.report_log = None
+        self.terms_log = None
 
-    def get_report_logger(self):
-        report_logger = logging.getLogger(self.current_ontology + '_report')
-        report_logger.setLevel(logging.INFO)
-        if not len(report_logger.handlers):
-            log_file = '{}_report.log'
-            ols_report_handler = logging.FileHandler(
-                join(self.options.get('output_dir'), log_file.format(self.current_ontology)))
-            formatter = logging.Formatter('%(asctime)s:  - \t%(message)s')
-            ols_report_handler.setFormatter(formatter)
-            report_logger.addHandler(ols_report_handler)
-        return report_logger
+    def get_ontology_logger(self, ontology_name):
+        if not self.report_log:
+            onto_logger = logging.getLogger(onto_logger_name(ontology_name))
+            onto_logger.setLevel(self.options['verbosity'])
+            if not len(onto_logger.handlers):
+                ols_report_handler = logging.FileHandler(
+                    join(self.options.get('output_dir'), onto_logger_name(ontology_name) + '.log'))
+                ols_report_handler.setFormatter(formatter)
+                onto_logger.addHandler(ols_report_handler)
+            self.report_log = onto_logger
+        return self.report_log
 
-    def report(self, *messages):
-        report = self.get_report_logger()
-        if len(messages) > 1:
-            report.info(messages[0] % messages[1:])
-        else:
-            report.info(messages[0])
+    def get_term_logger(self, ontology_name=None, start=0, end=0):
+        if not self.terms_log:
+            assert (ontology_name is not None)
+            term_logger = logging.getLogger(term_logger_name(ontology_name, start, end))
+            term_logger.setLevel(self.options['verbosity'])
+            ols_logger = logging.getLogger('ebi.ols.api')
+            if not len(term_logger.handlers):
+                ols_report_handler = logging.FileHandler(
+                    join(self.options.get('output_dir'), term_logger_name(ontology_name, start, end) + '.log'))
+                ols_report_handler.setFormatter(formatter)
+                term_logger.addHandler(ols_report_handler)
+                ols_logger.addHandler(ols_report_handler)
+            self.terms_log = term_logger
 
-    def init_meta(self):
-        with dal.session_scope() as session:
-            prev_version = int(self.options.get('db_version')) - 1
-            metas = {
-                'schema_version': self.options.get('db_version'),
-                'schema_type': 'ontology',
-                'patch': 'patch_{}_{}_a.sql|schema version'.format(prev_version, self.options.get('db_version'))
-            }
-            for meta_key, meta_value in metas.items():
-                get_one_or_create(Meta,
-                                  session,
-                                  meta_key=meta_key,
-                                  create_method_kwargs=dict(meta_value=meta_value))
-        self.db_init = True
+        return self.terms_log
 
     def load_ontology(self, ontology, session, namespace=''):
         """
@@ -138,14 +164,15 @@ class OlsLoader(object):
                                                 name=ontology_name,
                                                 namespace=namespace,
                                                 create_method_kwargs={'helper': ontology})
+        self.report_log = self.get_ontology_logger(ontology_name)
         if created:
-            self.report('----------------------------------')
-            self.report('Ontology [%s][%s] - %s:' % (ontology_name, ontology.namespace, ontology.config.title))
-            self.report('- Number of terms: %s' % ontology.number_of_terms)
-            self.report('- Number of individuals: %s' % ontology.number_of_individuals)
-            self.report('- Number of properties: %s' % ontology.number_of_properties)
+            self.report_log.info('----------------------------------')
+            self.report_log.info('Ontology [%s][%s] - %s:' % (ontology_name, ontology.namespace, ontology.config.title))
+            self.report_log.info('- Number of terms: %s' % ontology.number_of_terms)
+            self.report_log.info('- Number of individuals: %s' % ontology.number_of_individuals)
+            self.report_log.info('- Number of properties: %s' % ontology.number_of_properties)
         start = datetime.datetime.now()
-        logger.debug('Updating meta for ontology %s', ontology_name)
+        self.report_log.debug('Updating meta for ontology %s', ontology_name)
         get_one_or_create(Meta,
                           session,
                           meta_key=ontology_name + '_load_date',
@@ -162,16 +189,16 @@ class OlsLoader(object):
                           create_method_kwargs=dict(
                               meta_value=ontology_name + '/' + updated_at.strftime('%c')))
 
-        logger.info('Loaded [%s/%s] %s', m_ontology.name, m_ontology.namespace, m_ontology.title)
+        self.report_log.info('Loaded [%s/%s] %s', m_ontology.name, m_ontology.namespace, m_ontology.title)
         return m_ontology
 
-    @staticmethod
-    def wipe_ontology(ontology_name):
+    def wipe_ontology(self, ontology_name):
         """
         Completely remove all ontology related data from DBs
         :param ontology_name: specified ontology short name
         :return: boolean whether or not Ontology has been successfully deleted
         """
+        logger = self.get_ontology_logger(ontology_name)
         with dal.session_scope() as session:
             logger.info('Wipe ontology %s', ontology_name)
             try:
@@ -221,31 +248,33 @@ class OlsLoader(object):
         nb_terms = 0
         nb_terms_ignored = 0
         o_ontology = self.client.ontology(identifier=ontology)
+        terms_log = self.get_term_logger(ontology, start, end)
+        report = self.get_ontology_logger(ontology)
         if o_ontology:
             self.current_ontology = o_ontology.ontology_id.upper()
             if start is not None and end is not None:
-                logger.info('Loading terms slice [%s, %s]', start, end)
-                # TODO move this slice fix into ols-client when dealing with discrepencies between number of terms
+                terms_log.info('Loading terms slice [%s, %s]', start, end)
+                # TODO move this slice fix into ols-client when dealing with discrepancies between number of terms
                 # between ontology / terms api calls
                 max_terms = len(o_ontology.terms()) - 1
                 min_end = min(end, max_terms)
-                logger.info('Which is slice [%s, %s]', start, min_end)
-                logger.info('-----------------------------------------')
+                terms_log.debug('Which resolve to [%s, %s]', start, min_end)
+                terms_log.info('-----------------------------------------')
                 if min_end < start:
-                    logger.warning("Wrong slice order.min:%s max:%s ", start, min_end)
+                    terms_log.warning("Wrong slice order.min:%s max:%s ", start, min_end)
                     # skip this chunk
                     return None, None
                 terms = o_ontology.terms()[start:min_end]
-                logger.info('Slice len %s', len(terms))
-                report_msg = ('- Loading %s terms slice [%s:%s]', ontology, start, end)
+                terms_log.info('Slice len %s', len(terms))
+                report.info('- Loading %s terms slice [%s:%s]', ontology, start, end)
             else:
                 terms = o_ontology.terms()
-                logger.info('Loading %s terms for %s', len(terms), o_ontology.ontology_id.upper())
-                report_msg = ('- Loading all terms (%s)', len(terms))
+                terms_log.info('Loading %s terms for %s', len(terms), o_ontology.ontology_id.upper())
+                report.info('- Loading all terms (%s)', len(terms))
             with dal.session_scope() as session:
                 for o_term in terms:
-                    logger.info('Term namespace %s', o_term.namespace)
                     if o_term.is_defining_ontology and has_accession(o_term):
+                        terms_log.debug('Term %s', o_term)
                         m_ontology, created = get_one_or_create(Ontology,
                                                                 session,
                                                                 name=self.current_ontology,
@@ -253,26 +282,26 @@ class OlsLoader(object):
                                                                 create_method_kwargs=dict(
                                                                     version=o_ontology.version,
                                                                     title=o_ontology.title))
-                        logger.debug('Loaded term (from OLS) %s', o_term)
-                        logger.debug('Adding/Retrieving namespaced ontology %s', o_term.namespace)
-                        logger.debug('Ontology namespace %s %s', m_ontology.name, m_ontology.namespace)
+                        terms_log.debug('Loaded term (from OLS) %s', o_term)
+                        terms_log.debug('Adding/Retrieving namespaced ontology %s', o_term.namespace)
+                        terms_log.debug('Ontology namespace %s %s', m_ontology.name, m_ontology.namespace)
                         if m_ontology.namespace != o_term.namespace:
-                            logger.warning('discrepancy term/ontology namespace')
-                            logger.warning('term:', o_term)
-                            logger.warning('ontology:', o_ontology)
+                            terms_log.warning('discrepancy term/ontology namespace')
+                            terms_log.warning('term:', o_term)
+                            terms_log.warning('ontology:', o_ontology)
                         term = self.load_term(o_term, m_ontology, session)
                         if term:
                             session.add(term)
                             nb_terms += 1
                     else:
-                        logger.info('Ignored term [%s:%s]', o_term.is_defining_ontology, o_term.short_form)
+                        terms_log.info('Ignored term [%s:%s]', o_term.is_defining_ontology, o_term.short_form)
                         nb_terms_ignored += 1
-                self.report(*report_msg)
-                self.report('- Expected %s terms (defined in ontology)', nb_terms)
-                self.report('- Ignored %s terms (not defined in ontology)', nb_terms_ignored)
+                terms_log.info('- Expected %s terms (defined in accepted ontology)', nb_terms)
+                terms_log.info('- Ignored %s terms (not defined in accepted ontology)', nb_terms_ignored)
                 return nb_terms, nb_terms_ignored
         else:
-            logger.warn('Ontology not found %s', ontology)
+            report.info('Ontology not found %s', ontology)
+            terms_log.warning('Ontology not found %s', ontology)
             return 0, 0
 
     def load_term(self, o_term, ontology, session, process_relation=True):
@@ -285,7 +314,6 @@ class OlsLoader(object):
         """
         if type(ontology) is str:
             m_ontology = self.load_ontology(ontology, session, o_term.namespace)
-            # session.merge(m_ontology)
         elif isinstance(ontology, Ontology):
             m_ontology = ontology
         elif isinstance(ontology, helpers.Ontology):
@@ -296,7 +324,9 @@ class OlsLoader(object):
         else:
             raise RuntimeError('Wrong parameter')
         session.merge(m_ontology)
-
+        self.current_ontology = m_ontology.name
+        logger = self.get_term_logger(self.current_ontology)
+        logger.info("Loading term details %s", o_term)
         if has_accession(o_term):
             if not o_term.description:
                 o_term.description = [inflection.humanize(o_term.label)]
@@ -319,20 +349,24 @@ class OlsLoader(object):
                     self.load_term_ancestors(m_term, o_term, session)
             return m_term
         else:
+            logger.info("O_term %s has no accession", o_term)
             return None
 
     def load_alt_ids(self, m_term, o_term, session):
+        logger = self.get_term_logger(self.current_ontology)
         session.query(AltId).filter(AltId.term == m_term).delete()
         if o_term.annotation.has_alternative_id:
             logger.info('Loaded AltId %s', o_term.annotation.has_alternative_id)
-            [m_term.alt_ids.append(AltId(accession=alt_id, term=m_term)) for alt_id in
-             o_term.annotation.has_alternative_id]
+            for alt_accession in o_term.annotation.has_alternative_id:
+                logger.debug('Adding AltId %s', alt_accession)
+                m_term.alt_ids.append(AltId(accession=alt_accession, term=m_term))
             logger.debug('...Done')
         else:
             logger.info('...No AltIds')
         return m_term
 
     def load_term_subsets(self, term, session):
+        logger = self.get_term_logger(self.current_ontology)
         subsets = []
         if term.subsets:
             s_subsets = self.client.search(query=term.subsets, filters={'type': 'property', 'exact': 'false'})
@@ -368,6 +402,7 @@ class OlsLoader(object):
 
     def load_term_relations(self, m_term, o_term, session):
         relation_types = [rel for rel in o_term.relations_types if rel not in self.__ignored_relations]
+        logger = self.get_term_logger(self.current_ontology)
         logger.info('Terms relations %s', relation_types)
         n_relations = 0
         for rel_name in relation_types:
@@ -390,6 +425,7 @@ class OlsLoader(object):
         return n_relations
 
     def rel_dest_ontology(self, m_term, o_term, session):
+        logger = self.get_term_logger(self.current_ontology)
         if o_term.is_defining_ontology:
             logger.debug('Related term is defined in SAME ontology')
             o_term_details = o_term
@@ -408,6 +444,7 @@ class OlsLoader(object):
                     logger.debug('Related term is defined in EXPECTED ontology')
                     o_term_details = self.client.term(identifier=o_term.iri, silent=True, unique=True)
                     if o_term_details:
+                        logger.debug('Retrieved term %s[%s]', o_term_details, o_term_details.ontology_name)
                         o_onto_details = self.client.ontology(identifier=o_term_details.ontology_name)
                         if o_onto_details:
                             namespace = o_term_details.namespace if o_term_details.namespace else o_term_details.ontology_name
@@ -419,10 +456,12 @@ class OlsLoader(object):
                                                                         version=o_onto_details.version,
                                                                         title=o_onto_details.title))
                             return o_term_details, r_ontology
+                    else:
+                        logger.debug('Term %s Not Retrieved', o_term.iri)
         return None, None
 
     def load_term_relation(self, m_term, o_term, relation_type, session):
-
+        logger = self.get_term_logger(self.current_ontology)
         if has_accession(o_term):
             try:
                 m_related = session.query(Term).filter_by(accession=o_term.accession).one()
@@ -449,6 +488,7 @@ class OlsLoader(object):
 
     def load_term_ancestors(self, m_term, o_term, session):
         # delete old ancestors
+        logger = self.get_term_logger(self.current_ontology)
         try:
             ancestors = o_term.load_relation('parents')
             r_ancestors = 0
@@ -467,6 +507,7 @@ class OlsLoader(object):
             return 0
 
     def load_term_synonyms(self, m_term, o_term, session):
+        logger = self.get_term_logger(self.current_ontology)
         logger.debug('Loading term synonyms...')
 
         session.query(Synonym).filter(Synonym.term == m_term).delete()
@@ -529,6 +570,15 @@ class OlsLoader(object):
         session = dal.get_session()
         ontologies = session.query(Ontology).filter_by(name=ontology_name.upper()).all()
         self.current_ontology = ontology_name
+
+        report_logger = logging.getLogger('load_report')
+        if not len(report_logger.handlers):
+            ols_report_handler = logging.FileHandler(
+                join(self.options.get('output_dir'), 'report.log'))
+            formatter = logging.Formatter('%(asctime)s:  - \t%(message)s')
+            ols_report_handler.setFormatter(formatter)
+            report_logger.addHandler(ols_report_handler)
+
         for ontology in ontologies:
             synonyms = session.query(Synonym).filter(Synonym.term_id == Term.term_id,
                                                      Term.ontology_id == ontology.id).count()
@@ -538,11 +588,11 @@ class OlsLoader(object):
                                                   Term.ontology_id == ontology.id).count()
             terms = session.query(Term).filter(Term.ontology == ontology).count()
             repeat = len('Ontology %s / Namespace %s' % (ontology.name, ontology.namespace))
-            self.report('-' * repeat)
-            self.report('Ontology %s / Namespace %s', ontology.name, ontology.namespace)
-            self.report('-' * repeat)
-            self.report('- Imported Terms %s', terms)
-            self.report('- Imported Relations %s', relations)
-            self.report('- Imported Alt Ids %s', alt_ids)
-            self.report('- Imported Synonyms %s', synonyms)
-            self.report('- Generated Closure %s', closures)
+            report_logger.info('-' * repeat)
+            report_logger.info('Ontology %s / Namespace %s', ontology.name, ontology.namespace)
+            report_logger.info('-' * repeat)
+            report_logger.info('- Imported Terms %s', terms)
+            report_logger.info('- Imported Relations %s', relations)
+            report_logger.info('- Imported Alt Ids %s', alt_ids)
+            report_logger.info('- Imported Synonyms %s', synonyms)
+            report_logger.info('- Generated Closure %s', closures)

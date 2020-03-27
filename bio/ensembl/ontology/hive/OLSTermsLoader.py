@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 .. See the NOTICE file distributed with this work for additional information
    regarding copyright ownership.
@@ -14,29 +13,37 @@
 """
 # @author Marc Chakiachvili
 import logging
+from os.path import join
 
-from .OLSHiveLoader import OLSHiveLoader
+import eHive
 
-logger = logging.getLogger(__name__)
+from . import log_file, log_levels, param_defaults
+from ..loader.ols import OlsLoader
 
 
-class OLSTermsLoader(OLSHiveLoader):
+class OLSTermsLoader(eHive.BaseRunnable):
     """ OLS MySQL loader runnable class for eHive integration """
 
     def run(self):
-        # False => erreur marque le job en failed, i.e pas de retry
+        options = param_defaults()
+        options['wipe'] = self.param('wipe_one')
+        options['ols_api_url'] = self.param('ols_api_url')
+        options['page_size'] = self.param('page_size')
+        options['output_dir'] = self.param('output_dir')
+        logging.basicConfig(level=log_levels.get(self.param('verbosity'), '2'),
+                            datefmt='%m-%d %H:%M:%S')
+        ols_loader = OlsLoader(self.param_required('db_url'), **options)
+
+        logger = ols_loader.get_ontology_logger(self.param_required('ontology_name'))
         self.input_job.transient_error = False
-        # TODO add default options
-        logger.info('Loading %s ontology terms [%s..%s]',
+        logger.info('HiveTermsLoader: Loading %s ontology terms [%s..%s]',
                     self.param_required('ontology_name'),
                     self.param_required('_start_term_index'),
                     self.param_required('_end_term_index'))
-        self.ols_loader.load_ontology_terms(self.param_required('ontology_name'),
-                                            start=self.param_required('_start_term_index'),
-                                            end=self.param_required('_end_term_index'))
-
-    def write_output(self):
-        logger.info('Done %s ontology terms [%s..%s]',
+        ols_loader.load_ontology_terms(self.param_required('ontology_name'),
+                                       start=self.param_required('_start_term_index'),
+                                       end=self.param_required('_end_term_index'))
+        logger.info('Loaded %s ontology terms [%s..%s]',
                     self.param_required('ontology_name'),
                     self.param_required('_start_term_index'),
                     self.param_required('_end_term_index'))
