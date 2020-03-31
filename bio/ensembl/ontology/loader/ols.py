@@ -44,7 +44,6 @@ def init_schema(db_url, **options):
     dal.db_init(db_url, **options)
     dal.create_schema()
     db_version = options.get('ens_version', 99)
-    print('db_version', db_version)
     with dal.session_scope() as session:
         metas = {
             'schema_version': db_version,
@@ -89,7 +88,7 @@ class OlsLoader:
         'process_parents': True,
         'page_size': 1000,
         'output_dir': getenv("HOME"),
-        'verbosity': logging.DEBUG,
+        'verbosity': logging.WARNING,
         'ols_api_url': None
     }
 
@@ -167,12 +166,12 @@ class OlsLoader:
         self.report_log = self.get_ontology_logger(ontology_name)
         if created:
             self.report_log.info('----------------------------------')
+            self.report_log.info('Loaded [%s/%s] %s', m_ontology.name, m_ontology.namespace, m_ontology.title)
             self.report_log.info('Ontology [%s][%s] - %s:' % (ontology_name, ontology.namespace, ontology.config.title))
             self.report_log.info('- Number of terms: %s' % ontology.number_of_terms)
             self.report_log.info('- Number of individuals: %s' % ontology.number_of_individuals)
             self.report_log.info('- Number of properties: %s' % ontology.number_of_properties)
         start = datetime.datetime.now()
-        self.report_log.debug('Updating meta for ontology %s', ontology_name)
         get_one_or_create(Meta,
                           session,
                           meta_key=ontology_name + '_load_date',
@@ -189,7 +188,6 @@ class OlsLoader:
                           create_method_kwargs=dict(
                               meta_value=ontology_name + '/' + updated_at.strftime('%c')))
 
-        self.report_log.info('Loaded [%s/%s] %s', m_ontology.name, m_ontology.namespace, m_ontology.title)
         return m_ontology
 
     def wipe_ontology(self, ontology_name):
@@ -568,17 +566,10 @@ class OlsLoader:
     def final_report(self, ontology_name):
         """ Create a report from actual inserted data for ontology """
         session = dal.get_session()
-        ontologies = session.query(Ontology).filter_by(name=ontology_name.upper()).all()
         self.current_ontology = ontology_name
 
-        report_logger = logging.getLogger('load_report')
-        if not len(report_logger.handlers):
-            ols_report_handler = logging.FileHandler(
-                join(self.options.get('output_dir'), 'report.log'))
-            formatter = logging.Formatter('%(asctime)s:  - \t%(message)s')
-            ols_report_handler.setFormatter(formatter)
-            report_logger.addHandler(ols_report_handler)
-
+        report_logger = self.get_ontology_logger(ontology_name)
+        ontologies = session.query(Ontology).filter_by(name=ontology_name.upper()).all()
         for ontology in ontologies:
             synonyms = session.query(Synonym).filter(Synonym.term_id == Term.term_id,
                                                      Term.ontology_id == ontology.id).count()

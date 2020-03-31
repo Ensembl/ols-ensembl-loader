@@ -44,7 +44,6 @@ class DataAccessLayer:
         self.engine = sqlalchemy.create_engine(conn_string,
                                                echo=options.get('echo', False),
                                                encoding='utf8',
-                                               convert_unicode=True,
                                                **extra_params)
         self.options = options or {}
         self.connection = self.engine.connect()

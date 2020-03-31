@@ -16,13 +16,16 @@ import os
 import unittest
 import warnings
 
+import eHive
 import sqlalchemy
+from eHive.Process import Job
 
 from bio.ensembl.ontology.loader.db import dal
 from bio.ensembl.ontology.loader.models import Ontology, Term, Subset
 from bio.ensembl.ontology.loader.ols import OlsLoader, log_format
 from ebi.ols.api import helpers as helpers
 from ebi.ols.api.client import OlsClient
+from ensembl.ontology.hive.OLSTermsLoader import OLSTermsLoader
 from tests import read_env
 
 read_env()
@@ -292,3 +295,28 @@ class TestOLSLoaderRemote(unittest.TestCase):
             self.assertIn('λ', m_term.description)
         else:
             self.skipTest("Character not present in retrieved term from OLS")
+
+    def testPRErrors(self):
+        class TermLoader(OLSTermsLoader):
+            def __init__(self, d):
+                self._BaseRunnable__params = eHive.Params.ParamContainer(d)
+                self.input_job = Job()
+                self.input_job.transient_error = True
+                self.debug = 1
+
+        params_set = {
+            'ontology_name': 'pr',
+            'db_url': self.db_url,
+            'output_dir': log_dir,
+            'verbosity': '4',
+            '_start_term_index': 1000,
+            '_end_term_index': 1999,
+            'ols_api_url': self.ols_api_url,
+            'allowed_ontologies': ['PR'],
+            'page_size': 1000
+        }
+
+        term_loader = TermLoader(params_set)
+        term_loader.run()
+        with dal.session_scope() as session:
+            self.assertIsNotNone(session.query(Ontology).filter_by(name='PR').one())
