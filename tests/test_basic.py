@@ -26,12 +26,12 @@ import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.hive.OLSHiveLoader import OLSHiveLoader
 from bio.ensembl.ontology.hive.OLSOntologyLoader import OLSOntologyLoader
 from bio.ensembl.ontology.hive.OLSTermsLoader import OLSTermsLoader
+from bio.ensembl.ontology.hive.OLSLoadPhiBaseIdentifier import OLSLoadPhiBaseIdentifier
 from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
 from bio.ensembl.ontology.loader.ols import OlsLoader, init_schema, log_format
 from ebi.ols.api.client import OlsClient
 from ebi.ols.api.exceptions import NotFoundException
-from ensembl.ontology.hive.OLSLoadPhiBaseIdentifier import OLSLoadPhiBaseIdentifier
 from tests import read_env
 
 read_env()
