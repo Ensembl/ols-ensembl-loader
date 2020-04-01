@@ -182,7 +182,6 @@ class TestOLSLoaderBasic(unittest.TestCase):
         self.assertEqual(ontologies.count(), 2)
         self.loader.final_report(ontology_name)
         self.assertTrue(os.path.isfile(join(log_dir, ontology_name + '.ontology.log')))
-        self.assertTrue(os.path.isfile(join(log_dir, 'report.log')))
 
     def testUpperCase(self):
         ontology_name = 'OGMS'
@@ -344,20 +343,10 @@ class TestOLSLoaderBasic(unittest.TestCase):
                 self.input_job.transient_error = True
                 self.debug = 1
 
-        params_set = {
-            'ontology_name': 'PHI',
-            'db_url': self.db_url,
-            'output_dir': log_dir,
-            'verbosity': '4',
-            '_start_term_index': 0,
-            '_end_term_index': 19,
-            'ols_api_url': self.ols_api_url,
-            'allowed_ontologies': self.test_ontologies,
-            'page_size': 20
-        }
+        params_set = {'ontology_name': 'PHI', 'db_url': self.db_url, 'output_dir': log_dir, 'verbosity': '4',
+                      '_start_term_index': 0, '_end_term_index': 150, 'ols_api_url': self.ols_api_url,
+                      'allowed_ontologies': self.test_ontologies, 'page_size': 20}
 
-        params_set['_start_term_index'] = 0
-        params_set['_end_term_index'] = 150
         term_loader = PhiTermLoader(params_set)
         term_loader.run()
         with dal.session_scope() as session:
