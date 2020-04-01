@@ -20,12 +20,12 @@ import eHive
 import sqlalchemy
 from eHive.Process import Job
 
+from bio.ensembl.ontology.hive.OLSTermsLoader import OLSTermsLoader
 from bio.ensembl.ontology.loader.db import dal
 from bio.ensembl.ontology.loader.models import Ontology, Term, Subset
 from bio.ensembl.ontology.loader.ols import OlsLoader, log_format
 from ebi.ols.api import helpers as helpers
 from ebi.ols.api.client import OlsClient
-from ensembl.ontology.hive.OLSTermsLoader import OLSTermsLoader
 from tests import read_env
 
 read_env()
@@ -313,10 +313,12 @@ class TestOLSLoaderRemote(unittest.TestCase):
             '_end_term_index': 1999,
             'ols_api_url': self.ols_api_url,
             'allowed_ontologies': ['PR'],
-            'page_size': 1000
+            'page_size': 100
         }
 
         term_loader = TermLoader(params_set)
         term_loader.run()
         with dal.session_scope() as session:
             self.assertIsNotNone(session.query(Ontology).filter_by(name='PR').one())
+
+
