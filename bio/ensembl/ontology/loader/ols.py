@@ -86,7 +86,7 @@ class OlsLoader:
         'timeout': 720,
         'process_relations': True,
         'process_parents': True,
-        'page_size': 1000,
+        'page_size': 500,
         'output_dir': getenv("HOME"),
         'verbosity': logging.WARNING,
         'ols_api_url': None
