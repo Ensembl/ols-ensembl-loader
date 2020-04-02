@@ -35,4 +35,5 @@ class OLSHiveLoader(eHive.BaseRunnable):
             assert db_url_parts.username != ''
             assert db_url_parts.password != ''
         os.makedirs(self.param_required('output_dir'), exist_ok=True)
+
         init_schema(self.param_required('db_url'), **options)

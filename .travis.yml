@@ -21,8 +21,8 @@ install:
   - pip install python-coveralls
 # command to run tests
 script:
-  - nosetests tests.test_basic --verbose --with-coverage --cover-package=bio.ensembl
-  - nosetests tests.test_remote --verbose --with-coverage --cover-package=bio.ensembl
+  - coverage run -m nose tests.test_basic --verbose --cover-package=bio.ensembl
+  - coverage run -m nose tests.test_remote --verbose --cover-package=bio.ensembl
 before_script:
   - mysql -e 'CREATE DATABASE ols_test_ontology;' -u root
 after_success:

@@ -26,6 +26,7 @@ import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.hive.OLSHiveLoader import OLSHiveLoader
 from bio.ensembl.ontology.hive.OLSOntologyLoader import OLSOntologyLoader
 from bio.ensembl.ontology.hive.OLSTermsLoader import OLSTermsLoader
+from bio.ensembl.ontology.hive.OLSLoadPhiBaseIdentifier import OLSLoadPhiBaseIdentifier
 from bio.ensembl.ontology.loader.db import *
 from bio.ensembl.ontology.loader.models import *
 from bio.ensembl.ontology.loader.ols import OlsLoader, init_schema, log_format
@@ -109,7 +110,8 @@ class TestOLSLoaderBasic(unittest.TestCase):
                                     ontology=m_ontology)
                 closure_2 = Closure(closure_id=1010 + i, parent_term=m_term, child_term=m_term_3, distance=3,
                                     ontology=m_ontology_2)
-                closure_3 = Closure(closure_id=1020 + i, parent_term=m_term_2, child_term=m_term_3, subparent_term=m_term,
+                closure_3 = Closure(closure_id=1020 + i, parent_term=m_term_2, child_term=m_term_3,
+                                    subparent_term=m_term,
                                     distance=2, ontology=m_ontology_3)
                 session.add_all([closure_1, closure_2, closure_3])
 
@@ -180,7 +182,6 @@ class TestOLSLoaderBasic(unittest.TestCase):
         self.assertEqual(ontologies.count(), 2)
         self.loader.final_report(ontology_name)
         self.assertTrue(os.path.isfile(join(log_dir, ontology_name + '.ontology.log')))
-        self.assertTrue(os.path.isfile(join(log_dir, 'report.log')))
 
     def testUpperCase(self):
         ontology_name = 'OGMS'
@@ -333,6 +334,25 @@ class TestOLSLoaderBasic(unittest.TestCase):
             self.assertEqual(session.query(RelationType).count(), 1)
         self.assertTrue(os.path.isfile(join(log_dir, 'bfo.ontology.log')))
         self.assertTrue(os.path.isfile(join(log_dir, 'bfo.terms.0.15.log')))
+
+    def testPHIHiveLoader(self):
+        class PhiTermLoader(OLSLoadPhiBaseIdentifier):
+            def __init__(self, d):
+                self._BaseRunnable__params = eHive.Params.ParamContainer(d)
+                self.input_job = Job()
+                self.input_job.transient_error = True
+                self.debug = 1
+
+        params_set = {'ontology_name': 'PHI', 'db_url': self.db_url, 'output_dir': log_dir, 'verbosity': '4',
+                      '_start_term_index': 0, '_end_term_index': 150, 'ols_api_url': self.ols_api_url,
+                      'allowed_ontologies': self.test_ontologies, 'page_size': 20}
+
+        term_loader = PhiTermLoader(params_set)
+        term_loader.run()
+        with dal.session_scope() as session:
+            self.assertIsNotNone(session.query(Ontology).filter_by(name='PHI').one())
+            self.assertGreaterEqual(session.query(Term).count(), 80)
+            self.assertEqual(session.query(RelationType).count(), 1)
 
     def testRelationSingleTerm(self):
         with dal.session_scope() as session:

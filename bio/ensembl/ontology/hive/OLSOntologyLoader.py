@@ -34,7 +34,7 @@ class OLSOntologyLoader(eHive.BaseRunnable):
         options['output_dir'] = self.param('output_dir')
         ols_loader = OlsLoader(self.param_required('db_url'), **options)
         # TODO update options with loader params
-        logging.basicConfig(level=log_levels.get(self.param('verbosity'), '2'),
+        logging.basicConfig(level=log_levels.get(self.param('verbosity'), logging.ERROR),
                             datefmt='%m-%d %H:%M:%S')
         logger = ols_loader.get_ontology_logger(self.param_required('ontology_name'))
         logger.info('Loading ontology info %s', self.param_required('ontology_name'))
