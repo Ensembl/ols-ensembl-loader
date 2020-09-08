@@ -202,7 +202,7 @@ class TestOLSLoaderRemote(unittest.TestCase):
 
     def testTrickTerm(self):
         self.loader.options['process_relations'] = True
-        self.loader.options['process_parents'] = False
+        self.loader.options['process_parents'] = True
 
         with dal.session_scope() as session:
             # o_term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0001330')
@@ -211,8 +211,9 @@ class TestOLSLoaderRemote(unittest.TestCase):
             m_term = self.loader.load_term(o_term, 'fypo', session)
             session.add(m_term)
             found = False
+            print(m_term.parent_terms)
             for relation in m_term.parent_terms:
-                found = found or (relation.parent_term.accession == 'CHEBI:24431')
+                found = found or (relation.parent_term.accession == 'FYPO:0001323')
         self.assertTrue(found)
 
     def testSubsets(self):
@@ -268,7 +269,7 @@ class TestOLSLoaderRemote(unittest.TestCase):
             o_term = self.client.detail(term)
             m_term = self.loader.load_term(o_term, m_ontology, session)
             session.commit()
-            self.assertGreaterEqual(len(m_term.parent_terms), 4)
+            self.assertGreaterEqual(len(m_term.parent_terms), 1)
 
             self.loader.options['process_relations'] = False
             self.loader.options['process_parents'] = False
@@ -279,22 +280,6 @@ class TestOLSLoaderRemote(unittest.TestCase):
             self.assertEqual(m_term.ontology.name, 'GO')
             with self.assertRaises(RuntimeError):
                 self.loader.load_term(o_term, 33, session)
-
-    def testEncodingTerm(self):
-        self.loader.options['process_relations'] = False
-        self.loader.options['process_parents'] = False
-        session = dal.get_session()
-        m_ontology = self.loader.load_ontology('fypo', session)
-        session.add(m_ontology)
-        term = helpers.Term(ontology_name='fypo', iri='http://purl.obolibrary.org/obo/FYPO_0005645')
-        o_term = self.client.detail(term)
-        m_term = self.loader.load_term(o_term, m_ontology, session)
-        dal.get_session().commit()
-        self.assertTrue(isinstance(m_term.description, str))
-        if 'λ' in o_term.description:
-            self.assertIn('λ', m_term.description)
-        else:
-            self.skipTest("Character not present in retrieved term from OLS")
 
     def testPRErrors(self):
         class TermLoader(OLSTermsLoader):
@@ -320,5 +305,3 @@ class TestOLSLoaderRemote(unittest.TestCase):
         term_loader.run()
         with dal.session_scope() as session:
             self.assertIsNotNone(session.query(Ontology).filter_by(name='PR').one())
-
-
