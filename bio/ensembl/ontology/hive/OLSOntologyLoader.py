@@ -41,9 +41,7 @@ class OLSOntologyLoader(eHive.BaseRunnable):
         if self.param_required('wipe_one') == 1:
             logger.info("Wiping existing ontology data %s", self.param_required('ontology_name'))
             ols_loader.wipe_ontology(self.param_required('ontology_name'))
-        try:
-            assert self.param_required('ontology_name').upper() in ols_loader.allowed_ontologies
-        except AssertionError:
+        if not self.param_required('ontology_name').upper() in ols_loader.allowed_ontologies:
             raise JobFailedException("Ontology %s not implemented" % self.param_required('ontology_name'))
 
         with dal.session_scope() as session:
