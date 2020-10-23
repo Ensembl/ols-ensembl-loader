@@ -15,18 +15,23 @@
 
 import logging
 
-from bio.ensembl.ontology.hive.OLSHiveLoader import OLSHiveLoader
+import eHive
+
 from bio.ensembl.ontology.loader.db import dal
 from bio.ensembl.ontology.loader.models import Ontology, Term, Relation, RelationType, get_one_or_create
+from bio.ensembl.ontology.hive import param_defaults
 
 logger = logging.getLogger(__name__)
 
 
-class OLSLoadPhiBaseIdentifier(OLSHiveLoader):
+class OLSLoadPhiBaseIdentifier(eHive.BaseRunnable):
 
     def run(self):
         self.input_job.transient_error = False
+        options = param_defaults()
+
         logger.info('Loading PHIBASe Identifier terms')
+        dal.db_init(self.param_required('db_url'), **options)
         with dal.session_scope() as session:
             # delete phi-base-identifier namespaces ontology
             if self.param_required('_start_term_index') == 0:
@@ -46,25 +51,29 @@ class OLSLoadPhiBaseIdentifier(OLSHiveLoader):
                                                         version='1.0',
                                                         title='PHI-base Identifiers')
                                                     )
+            m_root, created = get_one_or_create(Term, session,
+                                                accession='PHI:0',
+                                                create_method_kwargs=dict(accession='PHI:0',
+                                                                          ontology=m_ontology,
+                                                                          is_root=1,
+                                                                          name='phibase identifier'))
             relation_type, created = get_one_or_create(RelationType,
                                                        session,
                                                        name='is_a')
-            for i in range(self.param_required('_start_term_index'), self.param_required('_end_term_index') + 1):
+            start = self.param_required('_start_term_index') if self.param_required('_start_term_index') != 0 else 1
+            for i in range(start, self.param_required('_end_term_index') + 1):
                 accession = 'PHI:{}'.format(i)
-                term = Term(accession=accession, name='{}'.format(i))
-                if i == 0:
-                    term.name = 'phibase identifier'
-                    term.is_root = 1
-                    m_related = term
-                else:
-                    m_related = session.query(Term).filter_by(accession='PHI:0').one()
+                term, created = get_one_or_create(Term, session,
+                                                  accession=accession,
+                                                  create_method_kwargs=dict(accession=accession,
+                                                                            name='{}'.format(i),
+                                                                            ontology=m_ontology,
+                                                                            is_root=0))
                 logger.debug('Adding Term %s', accession)
-                session.add(term)
+                logger.debug('Adding %s to ontology', accession)
                 m_ontology.terms.append(term)
-                if i != 0:
-                    term.add_parent_relation(m_related, relation_type, session)
-                else:
-                    m_related = term
+                if created:
+                    term.add_parent_relation(m_root, relation_type, session)
                 if i % 100 == 0:
                     logger.info('Committing transaction')
                     session.commit()

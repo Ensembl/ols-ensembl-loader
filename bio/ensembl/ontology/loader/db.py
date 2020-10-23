@@ -22,8 +22,6 @@ from .models import Base
 
 logger = logging.getLogger(__name__)
 
-Session = sessionmaker()
-
 __all__ = ['dal']
 
 
@@ -46,11 +44,14 @@ class DataAccessLayer:
         self.engine = sqlalchemy.create_engine(conn_string,
                                                echo=options.get('echo', False),
                                                encoding='utf8',
-                                               convert_unicode=True,
                                                **extra_params)
         self.options = options or {}
-        self.metadata.create_all(self.engine)
         self.connection = self.engine.connect()
+
+    def create_schema(self):
+        if not self.engine:
+            raise RuntimeError('Please call db_init first')
+        self.metadata.create_all(self.engine)
 
     def wipe_schema(self, conn_string):
         engine = sqlalchemy.create_engine(conn_string, echo=False)
@@ -59,8 +60,9 @@ class DataAccessLayer:
         Base.metadata.drop_all(engine)
 
     def get_session(self):
+        Session = sessionmaker()
         session = Session(bind=self.engine, autoflush=self.options.get('autoflush', False),
-                          autocommit=self.options.get('autocommit', False))
+                         autocommit=self.options.get('autocommit', False))
         logger.debug('Create a new session ...%s ', session)
         return session
 

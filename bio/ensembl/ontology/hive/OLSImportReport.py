@@ -15,23 +15,33 @@
 # @author Marc Chakiachvili
 import logging
 
-from .OLSHiveLoader import OLSHiveLoader
+import eHive
+
+from . import param_defaults
+from ..loader.ols import OlsLoader
 
 logger = logging.getLogger(__name__)
 
 
-class OLSImportReport(OLSHiveLoader):
+class OLSImportReport(eHive.BaseRunnable):
     """ Dedicated loader for Ontology main page"""
 
     def run(self):
         # False => erreur marque le job en failed, i.e pas de retry
+        options = param_defaults()
+        options['wipe'] = self.param('wipe_one')
+        options['ols_api_url'] = self.param('ols_api_url')
+        options['page_size'] = self.param('page_size')
+        options['output_dir'] = self.param('output_dir')
         self.input_job.transient_error = False
         logger.info('Creating loading report for %s', self.param_required('ontology_name'))
-        assert self.param_required('ontology_name').upper() in self.ols_loader.allowed_ontologies
-
-        self.ols_loader.final_report(self.param_required('ontology_name'))
-        self.dataflow({'ontology_name': self.param_required('ontology_name'),
-                       'report_file': self.ols_loader.get_report_logger().handlers[0].baseFilename})
+        ols_loader = OlsLoader(self.param_required('db_url'), **options)
+        assert self.param_required('ontology_name').upper() in ols_loader.allowed_ontologies
+        ols_loader.final_report(self.param_required('ontology_name'))
+        self.dataflow({
+            'ontology_name': self.param_required('ontology_name'),
+            'report_file': ols_loader.get_ontology_logger(self.param_required('ontology_name')).handlers[0].name}
+        )
 
     def write_output(self):
         logger.info('Ontology %s done...', self.param_required('ontology_name'))
