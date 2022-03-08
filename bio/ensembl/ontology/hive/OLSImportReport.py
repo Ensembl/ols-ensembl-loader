@@ -16,6 +16,7 @@
 import logging
 
 import eHive
+from eHive import JobFailedException
 
 from . import param_defaults
 from ..loader.ols import OlsLoader
@@ -36,7 +37,8 @@ class OLSImportReport(eHive.BaseRunnable):
         self.input_job.transient_error = False
         logger.info('Creating loading report for %s', self.param_required('ontology_name'))
         ols_loader = OlsLoader(self.param_required('db_url'), **options)
-        assert self.param_required('ontology_name').upper() in ols_loader.allowed_ontologies
+        if not self.param_required('ontology_name').upper() in ols_loader.allowed_ontologies:
+            raise JobFailedException("Ontology %s not implemented" % self.param_required('ontology_name'))
         ols_loader.final_report(self.param_required('ontology_name'))
         self.dataflow({
             'ontology_name': self.param_required('ontology_name'),
