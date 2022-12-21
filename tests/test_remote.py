@@ -18,7 +18,7 @@ import warnings
 
 import eHive
 import sqlalchemy
-from eHive.Process import Job
+from eHive.process import Job
 
 from bio.ensembl.ontology.hive.OLSTermsLoader import OLSTermsLoader
 from bio.ensembl.ontology.loader.db import dal
@@ -284,7 +284,7 @@ class TestOLSLoaderRemote(unittest.TestCase):
     def testPRErrors(self):
         class TermLoader(OLSTermsLoader):
             def __init__(self, d):
-                self._BaseRunnable__params = eHive.Params.ParamContainer(d)
+                self._BaseRunnable__params = eHive.params.ParamContainer(d)
                 self.input_job = Job()
                 self.input_job.transient_error = True
                 self.debug = 1
@@ -298,10 +298,11 @@ class TestOLSLoaderRemote(unittest.TestCase):
             '_end_term_index': 1999,
             'ols_api_url': self.ols_api_url,
             'allowed_ontologies': ['PR'],
-            'page_size': 100
+            'page_size': 100,
+            'wipe_one': True
         }
 
         term_loader = TermLoader(params_set)
         term_loader.run()
         with dal.session_scope() as session:
-            self.assertIsNotNone(session.query(Ontology).filter_by(name='PR').one())
+            self.assertIsNotNone(session.query(Ontology).filter_by(name='PR'))

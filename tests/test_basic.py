@@ -20,7 +20,7 @@ from os.path import join
 
 import eHive
 import sqlalchemy
-from eHive.Process import Job
+from eHive.process import Job
 
 import ebi.ols.api.helpers as helpers
 from bio.ensembl.ontology.hive.OLSHiveLoader import OLSHiveLoader
@@ -81,9 +81,9 @@ class TestOLSLoaderBasic(unittest.TestCase):
         if 'mysql' not in self.db_url:
             self.skipTest('Only with mysql')
         with dal.session_scope() as session:
-            m_ontology = Ontology(id=1000, name='GO', _namespace='namespace', version='1', title='Ontology test')
-            m_ontology_2 = Ontology(id=1001, name='GO', _namespace='namespace 2', version='1', title='Ontology test 2')
-            m_ontology_3 = Ontology(id=1002, name='FPO', _namespace='namespace 3', version='1', title='Ontology test 2')
+            m_ontology = Ontology(id=1000, _name='GO', _namespace='namespace', _version='1', title='Ontology test')
+            m_ontology_2 = Ontology(id=1001, _name='GO', _namespace='namespace 2', _version='1', title='Ontology test 2')
+            m_ontology_3 = Ontology(id=1002, _name='FPO', _namespace='namespace 3', _version='1', title='Ontology test 2')
             session.add(m_ontology)
             session.add(m_ontology_2)
             session.add(m_ontology_3)
@@ -247,7 +247,7 @@ class TestOLSLoaderBasic(unittest.TestCase):
     def testHiveLoader(self):
         class RunnableWithParams(OLSHiveLoader):
             def __init__(self, d):
-                self._BaseRunnable__params = eHive.Params.ParamContainer(d)
+                self._BaseRunnable__params = eHive.params.ParamContainer(d)
                 self.input_job = Job()
                 self.input_job.transient_error = True
                 self.debug = 1
@@ -272,7 +272,7 @@ class TestOLSLoaderBasic(unittest.TestCase):
     def testOntologyLoader(self):
         class OntologyLoader(OLSOntologyLoader):
             def __init__(self, d):
-                self._BaseRunnable__params = eHive.Params.ParamContainer(d)
+                self._BaseRunnable__params = eHive.params.ParamContainer(d)
                 self._BaseRunnable__read_pipe = open(join(base_dir, 'hive.in'), mode='rb', buffering=0)
                 self._BaseRunnable__write_pipe = open(join(base_dir, 'hive.out'), mode='wb', buffering=0)
                 self.input_job = Job()
@@ -298,7 +298,7 @@ class TestOLSLoaderBasic(unittest.TestCase):
     def testTermHiveLoader(self):
         class TermLoader(OLSTermsLoader):
             def __init__(self, d):
-                self._BaseRunnable__params = eHive.Params.ParamContainer(d)
+                self._BaseRunnable__params = eHive.params.ParamContainer(d)
                 self.input_job = Job()
                 self.input_job.transient_error = True
                 self.debug = 1
@@ -338,7 +338,7 @@ class TestOLSLoaderBasic(unittest.TestCase):
     def testPHIHiveLoader(self):
         class PhiTermLoader(OLSLoadPhiBaseIdentifier):
             def __init__(self, d):
-                self._BaseRunnable__params = eHive.Params.ParamContainer(d)
+                self._BaseRunnable__params = eHive.params.ParamContainer(d)
                 self.input_job = Job()
                 self.input_job.transient_error = True
                 self.debug = 1
