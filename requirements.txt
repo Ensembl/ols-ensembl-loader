@@ -6,4 +6,4 @@ PyMySQL==0.9.3
 inflection==0.3.1
 hal_codec~=1.0.2
 git+https://github.com/Ensembl/ensembl-hive@main
-# git+https://github.com/Ensembl/ols-client@main
+git+https://github.com/Ensembl/ols-client@main
