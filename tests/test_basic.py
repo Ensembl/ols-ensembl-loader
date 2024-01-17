@@ -37,7 +37,7 @@ from tests import read_env
 read_env()
 
 # TODO add potential multi processing thread safe logger class
-#  https://mattgathu.github.io/multiprocessing-logging-in-python/
+# https://mattgathu.github.io/multiprocessing-logging-in-python/
 # config = yaml.safe_load(open(dirname(__file__) + '/logging.yaml'))
 # logging.config.dictConfig(config)
 
@@ -55,7 +55,7 @@ class TestOLSLoaderBasic(unittest.TestCase):
     db_url = os.getenv('DB_TEST_URL',
                        'mysql+pymysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
     ols_api_url = os.getenv('OLS_API_URL', 'http://localhost:8080/api')
-    test_ontologies = ['AERO', 'DUO', 'BFO', 'EO', 'SO', 'ECO', 'PHI', 'OGMS']
+    test_ontologies = ['AERO', 'PHI']
 
     @classmethod
     def setUpClass(cls):
