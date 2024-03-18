@@ -41,7 +41,7 @@ log_dir = os.path.join(os.path.dirname(__file__), 'logs')
 class TestOLSLoaderRemote(unittest.TestCase):
     _multiprocess_shared_ = False
     db_url = os.getenv('DB_TEST_URL',
-                       'mysql+pymysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
+                       'mysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
     ols_api_url = 'https://www.ebi.ac.uk/ols/api'
 
     @classmethod
