@@ -53,7 +53,7 @@ log_dir = os.path.join(base_dir, 'logs')
 class TestOLSLoaderBasic(unittest.TestCase):
     _multiprocess_shared_ = False
     db_url = os.getenv('DB_TEST_URL',
-                       'mysql+pymysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
+                       'mysql://root@localhost:3306/ols_test_ontology?charset=utf8&autocommit=true')
     ols_api_url = os.getenv('OLS_API_URL', 'http://localhost:8080/api')
     test_ontologies = ['AERO', 'PHI']
 
