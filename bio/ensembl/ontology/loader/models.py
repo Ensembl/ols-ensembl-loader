@@ -204,7 +204,7 @@ class Subset(LoadAble, Base):
         return ['subset_id', 'name', 'definition']
 
     subset_id = Column(UnsignedInt, primary_key=True)
-    name = Column(String(64), nullable=False, unique=True)
+    name = Column(String(100), nullable=False, unique=True)
     definition = Column(BigStringUtf8, nullable=True, server_default=text("''"))
 
 
