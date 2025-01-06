@@ -1,9 +1,8 @@
-SQLAlchemy==1.3.15
-mysqlclient==1.4.6
-dateutils==0.6.7
-coreapi==2.3.3
-PyMySQL==0.9.3
-inflection==0.3.1
+SQLAlchemy~=1.4.0
+mysqlclient~=2.1.1
+dateutils
+coreapi
+inflection
 hal_codec~=1.0.2
+ebi-ols-client~=1.1.0
 git+https://github.com/Ensembl/ensembl-hive@main
-git+https://github.com/Ensembl/ols-client@main
